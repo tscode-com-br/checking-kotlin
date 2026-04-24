@@ -4,7 +4,6 @@ import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.Arrangement
@@ -14,6 +13,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -37,7 +37,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.GpsFixed
 import androidx.compose.material.icons.rounded.History
-import androidx.compose.material.icons.rounded.MyLocation
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -46,7 +45,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -79,6 +77,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
@@ -86,6 +85,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.br.checkingnative.R
@@ -151,7 +151,6 @@ fun CheckingApp(
     var showPresentation by rememberSaveable { mutableStateOf(true) }
     val snackbarHostState = remember { SnackbarHostState() }
     var showLocationSheet by remember { mutableStateOf(false) }
-    var showMonitoringSheet by remember { mutableStateOf(false) }
     var showSettingsSheet by remember { mutableStateOf(false) }
     var showInitialMonitoringPrompt by rememberSaveable { mutableStateOf(false) }
 
@@ -208,7 +207,6 @@ fun CheckingApp(
             CheckingMainContent(
                 uiState = uiState,
                 onOpenLocationSheet = { showLocationSheet = true },
-                onOpenMonitoringSheet = { showMonitoringSheet = true },
                 onOpenSettingsSheet = { showSettingsSheet = true },
                 onChaveChanged = onChaveChanged,
                 onRefreshWebAuthStatus = onRefreshWebAuthStatus,
@@ -243,26 +241,6 @@ fun CheckingApp(
         }
     }
 
-    if (showMonitoringSheet) {
-        ModalBottomSheet(
-            onDismissRequest = { showMonitoringSheet = false },
-            containerColor = CheckingSurface,
-            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-            dragHandle = { SheetHandle() },
-        ) {
-            MonitoringSheet(
-                uiState = uiState,
-                onLocationSharingChanged = onLocationSharingChanged,
-                onBackgroundAccessChanged = onBackgroundAccessChanged,
-                onNotificationsChanged = onNotificationsChanged,
-                onBatteryOptimizationChanged = onBatteryOptimizationChanged,
-                onOemBackgroundSetupChanged = onOemBackgroundSetupChanged,
-                onAutomaticCheckingChanged = onAutomaticCheckingChanged,
-                onClose = { showMonitoringSheet = false },
-            )
-        }
-    }
-
     if (showInitialMonitoringPrompt) {
         InitialMonitoringSetupDialog(
             onAccept = {
@@ -284,13 +262,13 @@ fun CheckingApp(
             dragHandle = { SheetHandle() },
         ) {
             SettingsSheet(
-                state = uiState.state,
-                permissionSettings = uiState.permissionSettings,
+                uiState = uiState,
                 onLocationSharingChanged = onLocationSharingChanged,
                 onBackgroundAccessChanged = onBackgroundAccessChanged,
                 onNotificationsChanged = onNotificationsChanged,
                 onBatteryOptimizationChanged = onBatteryOptimizationChanged,
                 onOemBackgroundSetupChanged = onOemBackgroundSetupChanged,
+                onAutomaticCheckingChanged = onAutomaticCheckingChanged,
                 onLocationUpdateIntervalChanged = onLocationUpdateIntervalChanged,
                 onNightUpdatesChanged = onNightUpdatesChanged,
                 onNightModeAfterCheckoutChanged = onNightModeAfterCheckoutChanged,
@@ -379,7 +357,6 @@ private fun SheetHandle() {
 private fun CheckingMainContent(
     uiState: CheckingUiState,
     onOpenLocationSheet: () -> Unit,
-    onOpenMonitoringSheet: () -> Unit,
     onOpenSettingsSheet: () -> Unit,
     onChaveChanged: (String) -> Unit,
     onRefreshWebAuthStatus: () -> Unit,
@@ -414,7 +391,6 @@ private fun CheckingMainContent(
                 Spacer(modifier = Modifier.height(20.dp))
                 Header(
                     onOpenLocationSheet = onOpenLocationSheet,
-                    onOpenMonitoringSheet = onOpenMonitoringSheet,
                     onOpenSettingsSheet = onOpenSettingsSheet,
                 )
                 HistorySection(state = state)
@@ -465,11 +441,10 @@ private fun CheckingMainContent(
             }
 
             Spacer(modifier = Modifier.height(24.dp))
-            Button(
+            CheckingPrimaryButton(
                 onClick = onSubmit,
                 enabled = CheckingController.isRegisterActionInteractive(state) &&
                     uiState.webAuth.authenticated,
-                shape = RoundedCornerShape(14.dp),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp),
@@ -516,7 +491,6 @@ private fun TopLogo() {
 @Composable
 private fun Header(
     onOpenLocationSheet: () -> Unit,
-    onOpenMonitoringSheet: () -> Unit,
     onOpenSettingsSheet: () -> Unit,
 ) {
     Column(
@@ -536,16 +510,6 @@ private fun Header(
                 overflow = TextOverflow.Ellipsis,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                HeaderIconButton(
-                    onClick = onOpenMonitoringSheet,
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.MyLocation,
-                        contentDescription = "Monitoramento em segundo plano",
-                        tint = CheckingSuccess,
-                        modifier = Modifier.size(22.dp),
-                    )
-                }
                 HeaderIconButton(
                     onClick = onOpenLocationSheet,
                 ) {
@@ -582,18 +546,14 @@ private fun HeaderIconButton(
     onClick: () -> Unit,
     content: @Composable () -> Unit,
 ) {
-    Surface(
-        shape = RoundedCornerShape(12.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, CheckingBorder),
-        color = CheckingSurface,
+    CheckingSecondaryButton(
+        onClick = onClick,
+        minHeight = null,
+        contentPadding = PaddingValues(0.dp),
+        modifier = Modifier.size(44.dp),
     ) {
-        IconButton(
-            onClick = onClick,
-            modifier = Modifier.size(44.dp),
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                content()
-            }
+        Box(contentAlignment = Alignment.Center) {
+            content()
         }
     }
 }
@@ -780,18 +740,16 @@ private fun WebAccessPanel(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        OutlinedButton(
+                        CheckingSecondaryButton(
                             onClick = onRefresh,
                             enabled = !busy,
-                            shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.weight(1f),
                         ) {
                             Text("Atualizar")
                         }
-                        OutlinedButton(
+                        CheckingSecondaryButton(
                             onClick = onLogout,
                             enabled = !busy,
-                            shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.weight(1f),
                         ) {
                             Text("Sair")
@@ -799,10 +757,9 @@ private fun WebAccessPanel(
                     }
                 }
                 authState.chave.length != 4 -> {
-                    Button(
+                    CheckingPrimaryButton(
                         onClick = onRefresh,
                         enabled = false,
-                        shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Text("VERIFICAR ACESSO")
@@ -815,10 +772,9 @@ private fun WebAccessPanel(
                         onValueChange = { password = it },
                         password = true,
                     )
-                    Button(
+                    CheckingPrimaryButton(
                         onClick = { onLogin(password) },
                         enabled = !busy,
-                        shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         AuthButtonContent(busy = busy, label = "ENTRAR")
@@ -831,10 +787,9 @@ private fun WebAccessPanel(
                         onValueChange = { password = it },
                         password = true,
                     )
-                    Button(
+                    CheckingPrimaryButton(
                         onClick = { onRegisterPassword(password) },
                         enabled = !busy,
-                        shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         AuthButtonContent(busy = busy, label = "CRIAR SENHA")
@@ -873,7 +828,7 @@ private fun WebAccessPanel(
                         onValueChange = { confirmPassword = it },
                         password = true,
                     )
-                    Button(
+                    CheckingPrimaryButton(
                         onClick = {
                             onRegisterUser(
                                 CheckingWebRegistrationInput(
@@ -888,17 +843,15 @@ private fun WebAccessPanel(
                             )
                         },
                         enabled = !busy,
-                        shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         AuthButtonContent(busy = busy, label = "CADASTRAR")
                     }
                 }
                 else -> {
-                    Button(
+                    CheckingPrimaryButton(
                         onClick = onRefresh,
                         enabled = !busy,
-                        shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         AuthButtonContent(busy = busy, label = "VERIFICAR ACESSO")
@@ -1026,38 +979,38 @@ private fun RadioOptionTile(
     onTap: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Row(
-        modifier = modifier
-            .clip(RoundedCornerShape(12.dp))
-            .border(
-                width = 1.dp,
-                color = if (selected) MaterialTheme.colorScheme.primary else CheckingBorder,
-                shape = RoundedCornerShape(12.dp),
-            )
-            .background(if (selected) CheckingPrimarySoft else CheckingSurface)
-            .clickable(onClick = onTap)
-            .padding(horizontal = 8.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center,
+    CheckingSecondaryButton(
+        onClick = onTap,
+        borderColor = if (selected) MaterialTheme.colorScheme.primary else CheckingBorder,
+        containerColor = if (selected) CheckingPrimarySoft else CheckingSurface,
+        contentColor = if (selected) MaterialTheme.colorScheme.primary else CheckingText,
+        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+        modifier = modifier,
     ) {
-        RadioButton(
-            selected = selected,
-            onClick = onTap,
-            colors = RadioButtonDefaults.colors(
-                selectedColor = MaterialTheme.colorScheme.primary,
-                unselectedColor = CheckingMuted,
-            ),
-        )
-        Spacer(modifier = Modifier.width(2.dp))
-        Text(
-            text = label,
-            color = if (selected) MaterialTheme.colorScheme.primary else CheckingText,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-            textAlign = TextAlign.Center,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
+        ) {
+            RadioButton(
+                selected = selected,
+                onClick = null,
+                colors = RadioButtonDefaults.colors(
+                    selectedColor = MaterialTheme.colorScheme.primary,
+                    unselectedColor = CheckingMuted,
+                ),
+            )
+            Spacer(modifier = Modifier.width(2.dp))
+            Text(
+                text = label,
+                color = if (selected) MaterialTheme.colorScheme.primary else CheckingText,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+        }
     }
 }
 
@@ -1081,9 +1034,8 @@ private fun LocationAutomationSheet(
                 null
             },
         )
-        OutlinedButton(
+        CheckingSecondaryButton(
             onClick = { showHistoryDialog = true },
-            shape = RoundedCornerShape(12.dp),
             modifier = Modifier.fillMaxWidth(),
         ) {
             Icon(imageVector = Icons.Rounded.History, contentDescription = null)
@@ -1110,7 +1062,7 @@ private fun LocationAutomationSheet(
 }
 
 @Composable
-private fun MonitoringSheet(
+private fun MonitoringPermissionsSection(
     uiState: CheckingUiState,
     onLocationSharingChanged: (Boolean) -> Unit,
     onBackgroundAccessChanged: (Boolean) -> Unit,
@@ -1118,7 +1070,6 @@ private fun MonitoringSheet(
     onBatteryOptimizationChanged: (Boolean) -> Unit,
     onOemBackgroundSetupChanged: (Boolean) -> Unit,
     onAutomaticCheckingChanged: (Boolean) -> Unit,
-    onClose: () -> Unit,
 ) {
     val state = uiState.state
     val permissionSettings = uiState.permissionSettings
@@ -1141,8 +1092,6 @@ private fun MonitoringSheet(
         automaticEnabled
     val firstLocationEntry = state.locationFetchHistory.firstOrNull()
 
-    SheetContent {
-        SheetTitle("Monitoramento")
         GroupBox {
             Text(
                 text = androidGuidance.title,
@@ -1320,10 +1269,9 @@ private fun MonitoringSheet(
             DetailRow("Último Check-Out", formatDetailedInstant(state.lastCheckOut))
         }
 
-        Button(
+        CheckingPrimaryButton(
             onClick = { onLocationSharingChanged(true) },
             enabled = !permissionSettings.isRefreshing && !coreReady,
-            shape = RoundedCornerShape(12.dp),
             modifier = Modifier.fillMaxWidth(),
         ) {
             if (permissionSettings.isRefreshing) {
@@ -1342,8 +1290,6 @@ private fun MonitoringSheet(
                     fontWeight = FontWeight.Bold,
                 )
             }
-        }
-        DangerCloseButton(onClose)
     }
 }
 
@@ -1430,7 +1376,7 @@ private fun MonitoringChecklistRow(
         }
         MonitoringStatusPill(ready = ready)
         if (actionLabel != null && onAction != null) {
-            TextButton(
+            CheckingTextActionButton(
                 onClick = onAction,
                 modifier = Modifier.widthIn(min = 72.dp),
             ) {
@@ -1495,9 +1441,8 @@ private fun InitialMonitoringSetupDialog(
             }
         },
         confirmButton = {
-            Button(
+            CheckingPrimaryButton(
                 onClick = onAccept,
-                shape = RoundedCornerShape(12.dp),
             ) {
                 Text(
                     text = "Ativar monitoramento automático",
@@ -1506,7 +1451,7 @@ private fun InitialMonitoringSetupDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onSkip) {
+            CheckingTextActionButton(onClick = onSkip, minHeight = null) {
                 Text("Agora não")
             }
         },
@@ -1516,13 +1461,13 @@ private fun InitialMonitoringSetupDialog(
 
 @Composable
 private fun SettingsSheet(
-    state: CheckingState,
-    permissionSettings: CheckingPermissionSettingsState,
+    uiState: CheckingUiState,
     onLocationSharingChanged: (Boolean) -> Unit,
     onBackgroundAccessChanged: (Boolean) -> Unit,
     onNotificationsChanged: (Boolean) -> Unit,
     onBatteryOptimizationChanged: (Boolean) -> Unit,
     onOemBackgroundSetupChanged: (Boolean) -> Unit,
+    onAutomaticCheckingChanged: (Boolean) -> Unit,
     onLocationUpdateIntervalChanged: (Int) -> Unit,
     onNightUpdatesChanged: (Boolean) -> Unit,
     onNightModeAfterCheckoutChanged: (Boolean) -> Unit,
@@ -1530,49 +1475,20 @@ private fun SettingsSheet(
     onNightEndChanged: (Int) -> Unit,
     onClose: () -> Unit,
 ) {
+    val state = uiState.state
+
     SheetContent {
         SheetTitle("Configurações")
         SectionTitle("Permissões")
-        GroupBox {
-            SwitchRow(
-                label = "Compartilhar Localização:",
-                value = state.locationSharingEnabled,
-                isBusy = state.isLocationUpdating,
-                onCheckedChange = if (CheckingRuntimeLogic.isLocationSharingToggleInteractive(state)) {
-                    onLocationSharingChanged
-                } else {
-                    null
-                },
-            )
-            SwitchRow(
-                label = "Acesso em 2º Plano:",
-                value = permissionSettings.backgroundAccessEnabled,
-                isBusy = permissionSettings.isRefreshing,
-                onCheckedChange = onBackgroundAccessChanged,
-            )
-            SwitchRow(
-                label = "Permitir Notificações:",
-                value = permissionSettings.notificationsEnabled,
-                isBusy = permissionSettings.isRefreshing,
-                onCheckedChange = onNotificationsChanged,
-            )
-            SwitchRow(
-                label = "Sem Restrições de Bateria:",
-                value = permissionSettings.batteryOptimizationIgnored,
-                isBusy = permissionSettings.isRefreshing,
-                onCheckedChange = onBatteryOptimizationChanged,
-            )
-            SwitchRow(
-                label = "Ativar Auto-Start:",
-                value = state.oemBackgroundSetupEnabled,
-                isBusy = permissionSettings.isRefreshing,
-                onCheckedChange = if (state.canEnableLocationSharing) {
-                    onOemBackgroundSetupChanged
-                } else {
-                    null
-                },
-            )
-        }
+        MonitoringPermissionsSection(
+            uiState = uiState,
+            onLocationSharingChanged = onLocationSharingChanged,
+            onBackgroundAccessChanged = onBackgroundAccessChanged,
+            onNotificationsChanged = onNotificationsChanged,
+            onBatteryOptimizationChanged = onBatteryOptimizationChanged,
+            onOemBackgroundSetupChanged = onOemBackgroundSetupChanged,
+            onAutomaticCheckingChanged = onAutomaticCheckingChanged,
+        )
         SectionTitle("Ajustes Gerais")
         GroupBox {
             Text(
@@ -1803,12 +1719,14 @@ private fun WheelSelector(
     ) {
         items(itemCount) { index ->
             val selected = index == safeSelectedIndex
-            Box(
+            CheckingTextActionButton(
+                onClick = { onSelectedIndex(index) },
+                shape = RoundedCornerShape(10.dp),
+                minHeight = null,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(38.dp)
-                    .clickable { onSelectedIndex(index) },
-                contentAlignment = Alignment.Center,
+                    .height(38.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
             ) {
                 Text(
                     text = itemLabel(index),
@@ -1891,16 +1809,9 @@ private fun GroupBox(
 
 @Composable
 private fun DangerCloseButton(onClose: () -> Unit) {
-    Button(
+    CheckingDangerButton(
         onClick = onClose,
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = CheckingError,
-            contentColor = Color.White,
-            disabledContainerColor = CheckingError.copy(alpha = 0.42f),
-            disabledContentColor = Color.White.copy(alpha = 0.72f),
-        ),
     ) {
         Text("Fechar")
     }
@@ -1914,7 +1825,7 @@ private fun RecentLocationHistoryDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
-            TextButton(onClick = onDismiss) {
+            CheckingTextActionButton(onClick = onDismiss, minHeight = null) {
                 Text("Fechar")
             }
         },
@@ -1989,6 +1900,127 @@ private fun HistoryTableRow(
             fontWeight = weight,
             style = MaterialTheme.typography.bodySmall,
         )
+    }
+}
+
+@Composable
+private fun CheckingPrimaryButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    minHeight: Dp? = 48.dp,
+    contentPadding: PaddingValues = ButtonDefaults.ContentPadding,
+    content: @Composable RowScope.() -> Unit,
+) {
+    Button(
+        onClick = onClick,
+        enabled = enabled,
+        shape = RoundedCornerShape(12.dp),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = MaterialTheme.colorScheme.primary,
+            contentColor = MaterialTheme.colorScheme.onPrimary,
+            disabledContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.42f),
+            disabledContentColor = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.72f),
+        ),
+        contentPadding = contentPadding,
+        modifier = modifier.optionalMinHeight(minHeight),
+        content = content,
+    )
+}
+
+@Composable
+private fun CheckingSecondaryButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    minHeight: Dp? = 48.dp,
+    shape: Shape = RoundedCornerShape(12.dp),
+    borderColor: Color? = null,
+    containerColor: Color = CheckingSurface,
+    contentColor: Color = CheckingText,
+    disabledContainerColor: Color = CheckingSurface,
+    disabledContentColor: Color = CheckingText.copy(alpha = 0.72f),
+    contentPadding: PaddingValues = ButtonDefaults.ContentPadding,
+    content: @Composable RowScope.() -> Unit,
+) {
+    val resolvedBorderColor = borderColor ?: if (enabled) {
+        CheckingBorder
+    } else {
+        CheckingBorder.copy(alpha = 0.42f)
+    }
+    OutlinedButton(
+        onClick = onClick,
+        enabled = enabled,
+        shape = shape,
+        border = androidx.compose.foundation.BorderStroke(1.dp, resolvedBorderColor),
+        colors = ButtonDefaults.outlinedButtonColors(
+            containerColor = containerColor,
+            contentColor = contentColor,
+            disabledContainerColor = disabledContainerColor,
+            disabledContentColor = disabledContentColor,
+        ),
+        contentPadding = contentPadding,
+        modifier = modifier.optionalMinHeight(minHeight),
+        content = content,
+    )
+}
+
+@Composable
+private fun CheckingTextActionButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    minHeight: Dp? = 40.dp,
+    shape: Shape = RoundedCornerShape(12.dp),
+    contentColor: Color = MaterialTheme.colorScheme.primary,
+    disabledContentColor: Color = MaterialTheme.colorScheme.primary.copy(alpha = 0.42f),
+    contentPadding: PaddingValues = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+    content: @Composable RowScope.() -> Unit,
+) {
+    TextButton(
+        onClick = onClick,
+        enabled = enabled,
+        shape = shape,
+        colors = ButtonDefaults.textButtonColors(
+            contentColor = contentColor,
+            disabledContentColor = disabledContentColor,
+        ),
+        contentPadding = contentPadding,
+        modifier = modifier.optionalMinHeight(minHeight),
+        content = content,
+    )
+}
+
+@Composable
+private fun CheckingDangerButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    minHeight: Dp? = 48.dp,
+    contentPadding: PaddingValues = ButtonDefaults.ContentPadding,
+    content: @Composable RowScope.() -> Unit,
+) {
+    Button(
+        onClick = onClick,
+        enabled = enabled,
+        shape = RoundedCornerShape(12.dp),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = CheckingError,
+            contentColor = Color.White,
+            disabledContainerColor = CheckingError.copy(alpha = 0.42f),
+            disabledContentColor = Color.White.copy(alpha = 0.72f),
+        ),
+        contentPadding = contentPadding,
+        modifier = modifier.optionalMinHeight(minHeight),
+        content = content,
+    )
+}
+
+private fun Modifier.optionalMinHeight(minHeight: Dp?): Modifier {
+    return if (minHeight == null) {
+        this
+    } else {
+        this.heightIn(min = minHeight)
     }
 }
 
