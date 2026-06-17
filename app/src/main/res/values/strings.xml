@@ -1,3 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- App name displayed in the launcher and system UI. -->
     <string name="app_name">Checking</string>
+    <!-- Notification channel labels (system-level; also translated via i18n at runtime). -->
+    <string name="notification_channel_service_name">Atividades automáticas</string>
+    <string name="notification_channel_events_name">Eventos de check-in/out</string>
 </resources>

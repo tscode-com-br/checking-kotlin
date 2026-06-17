@@ -1,10 +1,19 @@
-# Android entry points referenced from the manifest.
--keep class com.br.checkingnative.CheckingKotlinApp { *; }
--keep class com.br.checkingnative.MainActivity { *; }
--keep class com.br.checkingnative.CheckingLocationForegroundService { *; }
--keep class com.br.checkingnative.BootCompletedReceiver { *; }
--keep class com.br.checkingnative.NotificationActionReceiver { *; }
--keep class com.br.checkingnative.ScheduledNotificationReceiver { *; }
+# Add project specific ProGuard rules here.
 
-# Keep annotations and generic signatures used by Hilt, Room and Compose tooling.
--keepattributes RuntimeVisibleAnnotations,RuntimeInvisibleAnnotations,Signature,InnerClasses,EnclosingMethod
+# Retrofit + OkHttp
+-dontwarn okhttp3.**
+-dontwarn okio.**
+-keepattributes *Annotation*
+
+# kotlinx.serialization
+-keepattributes *Annotation*, InnerClasses
+-dontnote kotlinx.serialization.AnnotationsKt
+-keepclassmembers class kotlinx.serialization.json.** { *** Companion; }
+-keepclasseswithmembers class **$$serializer { *; }
+-keepclassmembers @kotlinx.serialization.Serializable class ** {
+    *** Companion;
+    *** serializer(...);
+}
+
+# Hilt
+-keepclasseswithmembernames class * { @dagger.hilt.* *; }

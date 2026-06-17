@@ -1,0 +1,13 @@
+<!-- Fully transparent icon for the native splash. The native splash (mandatory on
+     Android 12+) then shows only the teal background, and the Compose splash
+     (AppSplashScreen) owns the entire branded animation — so the user perceives a
+     single splash instead of "static logo then animation". -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:pathData="M0,0"
+        android:fillColor="#00000000" />
+</vector>

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Debug override: allow cleartext HTTP to the local Android emulator host (10.0.2.2 → dev server :8000).
+  This file overrides the production config only for the 'debug' build type (§5 / T0.4).
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">10.0.2.2</domain>
+        <domain includeSubdomains="false">localhost</domain>
+    </domain-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+            <!-- DEBUG ONLY: also trust user-installed CAs so the app works behind dev TLS proxies /
+                 corporate SSL interception (e.g. Avast Web Shield on the dev host) and through the
+                 emulator. Release builds use the production config (system CAs only). -->
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

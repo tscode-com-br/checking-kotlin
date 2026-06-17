@@ -1,7 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.CheckingKotlin" parent="Theme.Material3.DayNight.NoActionBar">
-        <item name="android:statusBarColor">@android:color/transparent</item>
-        <item name="android:navigationBarColor">@android:color/transparent</item>
-        <item name="android:windowLightStatusBar">true</item>
+    <!--
+      Base window theme: no title bar, Compose draws the full window.
+      Actual brand colours are applied via the Compose Material 3 theme (presentation/theme/).
+    -->
+    <style name="Theme.Checking" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@android:color/white</item>
+    </style>
+
+    <!--
+      Splash theme for MainActivity (API 26+).
+      Teal background with a transparent icon: the native splash shows only the
+      teal fill, then the Compose splash (AppSplashScreen) owns the whole branded
+      animation. This unifies what used to look like two splashes (native static
+      logo + Compose animation) into a single seamless one.
+    -->
+    <style name="Theme.Checking.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/ic_launcher_background</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_splash_transparent</item>
+        <item name="postSplashScreenTheme">@style/Theme.Checking</item>
     </style>
 </resources>

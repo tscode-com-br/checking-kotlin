@@ -1,95 +1,92 @@
 import java.util.Properties
 
 plugins {
-    id("com.android.application")
-    id("org.jetbrains.kotlin.android")
-    id("org.jetbrains.kotlin.plugin.compose")
-    id("com.google.devtools.ksp")
-    id("com.google.dagger.hilt.android")
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.ksp)
+    alias(libs.plugins.hilt)
+    alias(libs.plugins.ktlint)
 }
 
-val releaseVersionName = providers.gradleProperty("checking.versionName")
-    .orElse("1.4.1")
-val releaseVersionCode = providers.gradleProperty("checking.versionCode")
-    .map(String::toInt)
-    .orElse(16)
+val releaseVersionName = providers.gradleProperty("checking.versionName").orElse("2.0.0-alpha")
+val releaseVersionCode = providers.gradleProperty("checking.versionCode").map(String::toInt).orElse(17)
+
 val keystoreProperties = Properties().apply {
     val file = rootProject.file("keystore.properties")
-    if (file.exists()) {
-        file.inputStream().use(::load)
-    }
+    if (file.exists()) file.inputStream().use(::load)
 }
-val requiresReleaseSigning = gradle.startParameter.taskNames.any { taskName ->
-    val lower = taskName.lowercase()
-    lower.contains("bundlerelease") ||
-        lower.contains("assemblerelease") ||
-        lower.contains("publish")
+
+val requiresReleaseSigning = gradle.startParameter.taskNames.any { name ->
+    val lower = name.lowercase()
+    lower.contains("bundlerelease") || lower.contains("assemblerelease") || lower.contains("publish")
 }
 
 fun requireKeystoreProperty(name: String): String {
     val value = keystoreProperties.getProperty(name, "").trim()
-    if (value.isEmpty()) {
-        throw GradleException(
-            "Missing required property '$name' in keystore.properties for release build.",
-        )
-    }
-    if (value == "change-me") {
-        throw GradleException(
-            "keystore.properties still contains placeholder value for '$name'.",
-        )
-    }
+    require(value.isNotEmpty()) { "Missing keystore.properties '$name' for release build." }
+    require(value != "change-me") { "keystore.properties still has placeholder for '$name'." }
     return value
 }
 
 android {
-    namespace = "com.br.checkingnative"
+    namespace = "br.com.tscode.checking"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.br.checkingnative"
-        minSdk = 23
+        // applicationId matches the production Flutter app for in-place Play Store cutover (§23.0/§23.16-Q6).
+        applicationId = "com.br.checking"
+        // minSdk 24 (Android 7.0) matches the previous Flutter release — raising it would drop
+        // ~API 24/25 device models from the Play catalog. Safe because core library desugaring
+        // (below) backports java.time etc. lintVitalRelease guards any unguarded API 26+ calls.
+        minSdk = 24
         targetSdk = 36
         versionCode = releaseVersionCode.get()
         versionName = releaseVersionName.get()
 
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        vectorDrawables {
-            useSupportLibrary = true
-        }
+        testInstrumentationRunner = "br.com.tscode.checking.HiltTestRunner"
+
+        // Common BuildConfig fields (§5).
+        buildConfigField("String", "API_PREFIX", "\"/api/web\"")
+        buildConfigField("String", "WHATSAPP_SUPPORT_NUMBER", "\"\"") // TODO: fill before release
     }
 
     signingConfigs {
         create("release") {
-            val configuredStoreFile = keystoreProperties.getProperty("storeFile", "").trim()
             if (requiresReleaseSigning) {
-                val requiredStoreFile = rootProject.file(requireKeystoreProperty("storeFile"))
-                if (!requiredStoreFile.exists()) {
-                    throw GradleException(
-                        "Configured storeFile does not exist: ${requiredStoreFile.absolutePath}",
-                    )
-                }
-                storeFile = requiredStoreFile
+                storeFile = rootProject.file(requireKeystoreProperty("storeFile"))
                 storePassword = requireKeystoreProperty("storePassword")
                 keyAlias = requireKeystoreProperty("keyAlias")
                 keyPassword = requireKeystoreProperty("keyPassword")
-            } else if (configuredStoreFile.isNotEmpty()) {
-                storeFile = rootProject.file(configuredStoreFile)
-                storePassword = keystoreProperties.getProperty("storePassword", "")
-                keyAlias = keystoreProperties.getProperty("keyAlias", "")
-                keyPassword = keystoreProperties.getProperty("keyPassword", "")
+            } else {
+                val configured = keystoreProperties.getProperty("storeFile", "").trim()
+                if (configured.isNotEmpty()) {
+                    storeFile = rootProject.file(configured)
+                    storePassword = keystoreProperties.getProperty("storePassword", "")
+                    keyAlias = keystoreProperties.getProperty("keyAlias", "")
+                    keyPassword = keystoreProperties.getProperty("keyPassword", "")
+                }
             }
         }
     }
 
     buildTypes {
+        debug {
+            applicationIdSuffix = ".debug"
+            buildConfigField("String", "BASE_URL", "\"https://tscode.com.br\"")
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro",
-            )
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             signingConfig = signingConfigs.getByName("release")
+            buildConfigField("String", "BASE_URL", "\"https://tscode.com.br\"")
+            // Bundle native debug symbols (CameraX ships .so) so Play can symbolicate native
+            // crashes/ANRs — resolves the "no debug symbols uploaded" warning.
+            ndk {
+                debugSymbolLevel = "FULL"
+            }
         }
     }
 
@@ -101,6 +98,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     packaging {
@@ -117,42 +115,80 @@ kotlin {
 }
 
 dependencies {
-    val composeBom = platform("androidx.compose:compose-bom:2026.03.00")
+    val composeBom = platform(libs.compose.bom)
 
-    implementation("androidx.core:core-ktx:1.18.0")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.10.0")
-    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.10.0")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0")
-    implementation("androidx.activity:activity-compose:1.13.0")
-    implementation("com.google.android.material:material:1.13.0")
-    implementation("com.google.android.gms:play-services-location:21.3.0")
+    coreLibraryDesugaring(libs.desugar.jdk)
 
+    // AndroidX core
+    implementation(libs.core.ktx)
+    implementation(libs.core.splashscreen)
+    implementation(libs.activity.compose)
+
+    // Lifecycle
+    implementation(libs.lifecycle.runtime.ktx)
+    implementation(libs.lifecycle.runtime.compose)
+    implementation(libs.lifecycle.viewmodel.compose)
+
+    // Compose
     implementation(composeBom)
     androidTestImplementation(composeBom)
-    implementation("androidx.compose.ui:ui")
-    implementation("androidx.compose.ui:ui-tooling-preview")
-    implementation("androidx.compose.material:material-icons-extended")
-    implementation("androidx.compose.material3:material3")
+    implementation(libs.compose.ui)
+    implementation(libs.compose.ui.tooling.preview)
+    implementation(libs.compose.material3)
+    implementation(libs.compose.material.icons.extended)
 
-    implementation("androidx.datastore:datastore-preferences:1.2.1")
+    // Navigation
+    implementation(libs.navigation.compose)
 
-    implementation("androidx.room:room-runtime:2.8.4")
-    implementation("androidx.room:room-ktx:2.8.4")
-    ksp("androidx.room:room-compiler:2.8.4")
+    // Hilt DI
+    implementation(libs.hilt.android)
+    ksp(libs.hilt.compiler)
+    implementation(libs.hilt.navigation.compose)
+    implementation(libs.hilt.work)
+    ksp(libs.hilt.compiler.androidx)
 
-    implementation("com.google.code.gson:gson:2.13.2")
-    implementation("com.google.dagger:hilt-android:2.57")
-    ksp("com.google.dagger:hilt-compiler:2.57")
+    // Networking: OkHttp + Retrofit + kotlinx.serialization
+    implementation(libs.okhttp)
+    implementation(libs.okhttp.logging)
+    implementation(libs.okhttp.sse)
+    implementation(libs.retrofit)
+    implementation(libs.retrofit.kotlinx.serialization)
+    implementation(libs.kotlinx.serialization.json)
 
-    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
+    // Persistence
+    implementation(libs.datastore.preferences)
+    implementation(libs.security.crypto)
 
-    testImplementation("junit:junit:4.13.2")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
-    androidTestImplementation("androidx.test:core:1.7.0")
-    androidTestImplementation("androidx.test.ext:junit:1.3.0")
-    androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
-    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    // Background
+    implementation(libs.workmanager)
 
-    debugImplementation("androidx.compose.ui:ui-tooling")
-    debugImplementation("androidx.compose.ui:ui-test-manifest")
+    // Location (FusedLocationProviderClient + GeofencingClient)
+    implementation(libs.play.services.location)
+
+    // CameraX — video recording for accident mode (§12.3)
+    implementation(libs.camera.camera2)
+    implementation(libs.camera.lifecycle)
+    implementation(libs.camera.video)
+    implementation(libs.camera.view)
+
+    // Coroutines
+    implementation(libs.kotlinx.coroutines.android)
+
+    // Unit tests
+    testImplementation(libs.junit4)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.mockk)
+    testImplementation(libs.turbine)
+    testImplementation(libs.okhttp.mockwebserver)
+
+    // Instrumented tests
+    androidTestImplementation(libs.test.core)
+    androidTestImplementation(libs.test.ext.junit)
+    androidTestImplementation(libs.espresso.core)
+    androidTestImplementation(libs.compose.ui.test.junit4)
+    androidTestImplementation(libs.hilt.android.testing)
+    kspAndroidTest(libs.hilt.compiler)
+
+    debugImplementation(libs.compose.ui.tooling)
+    debugImplementation(libs.compose.ui.test.manifest)
 }
