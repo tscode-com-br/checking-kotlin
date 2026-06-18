@@ -119,3 +119,17 @@ fun resolveInitialLanguageCode(storedCode: String?, deviceFallback: Boolean = tr
     }
     return setActiveLanguageCode(DEFAULT_LANGUAGE)
 }
+
+// Pure resolution of the effective language for background work (notifications): stored code → device
+// locale → pt. Mirrors resolveInitialLanguageCode's precedence but does NOT mutate the global
+// activeLanguageCode, so it is safe to call off the UI thread. Used by the FGS/orchestrator so their
+// notifications follow the SAME language the UI resolved, instead of always defaulting to pt.
+fun resolveEffectiveLanguageCode(storedCode: String?): String {
+    if (!storedCode.isNullOrBlank()) {
+        val resolved = resolveLanguageCode(storedCode, "")
+        if (resolved.isNotEmpty()) return resolved
+    }
+    val device = detectDeviceLanguageCode()
+    if (device.isNotEmpty()) return device
+    return DEFAULT_LANGUAGE
+}

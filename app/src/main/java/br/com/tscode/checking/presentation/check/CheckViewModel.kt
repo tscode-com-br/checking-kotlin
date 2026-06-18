@@ -11,6 +11,7 @@ import br.com.tscode.checking.domain.clientstate.autofillPetrobrasEmailDomain
 import br.com.tscode.checking.domain.clientstate.isPasswordLengthValid
 import br.com.tscode.checking.domain.clientstate.isPasswordVerificationInputValid
 import br.com.tscode.checking.domain.clientstate.sanitizeSettingsChave
+import br.com.tscode.checking.domain.model.CheckAction
 import br.com.tscode.checking.domain.model.InformeType
 import br.com.tscode.checking.domain.model.MatchStatus
 import br.com.tscode.checking.domain.repository.AuthRepository
@@ -324,6 +325,20 @@ class CheckViewModel @Inject constructor(
         viewModelScope.launch { loadUserProjects() }
         viewModelScope.launch { loadMainProjectCatalog() }
         viewModelScope.launch { loadAvailableLocations() }
+        // P5: compute the one-time first-login nudge (per-chave). Read the persisted dismissal flag,
+        // then apply the pure predicate: show only if authenticated + auto OFF + not yet dismissed.
+        viewModelScope.launch {
+            val dismissed = appPreferences.getFlag(nudgeFlag(chave)).first()
+            _uiState.update {
+                it.copy(
+                    showAutoActivitiesNudge = shouldShowAutoActivitiesNudge(
+                        authenticated = status.authenticated,
+                        autoEnabled = it.automaticActivitiesEnabled,
+                        dismissed = dismissed,
+                    ),
+                )
+            }
+        }
         // GPS is NOT captured automatically here. captureLocation() runs only when automatic
         // activities are enabled AND location permission is sufficient — the screen drives it
         // once it has evaluated the live permission state (§ item 2).
@@ -373,6 +388,13 @@ class CheckViewModel @Inject constructor(
     fun onForegroundResume() {
         if (_uiState.value.isAuthenticated) {
             refreshCheckState()
+            // Change C (P3.1): with auto-activities ON, foregrounding runs the engine, which decides
+            // check-in OR check-out. FOREGROUND bypasses skip-if-unchanged by design; single-flight
+            // (runOnce mutex) prevents overlap with TIMER/GEOFENCE; change A (P6.1 — check-in only on
+            // location change) prevents redundant same-location check-ins. No-op when auto is OFF.
+            if (_uiState.value.automaticActivitiesEnabled) {
+                viewModelScope.launch { orchestrator.runOnce(OrchestratorTrigger.FOREGROUND) }
+            }
         }
     }
 
@@ -395,6 +417,8 @@ class CheckViewModel @Inject constructor(
                 historyState = null,
                 locationMatch = null,
                 selectedManualLocation = null,
+                // P5: no nudge once the session is gone.
+                showAutoActivitiesNudge = false,
             )
         }
     }
@@ -455,9 +479,20 @@ class CheckViewModel @Inject constructor(
         // disable the engine (only reduces background reliability). "Sufficient" mirrors the start
         // minimum (notifications + fine), read live so the UI/dialog reflect the real state.
         // (backgroundGranted is kept in the signature for the screen contract / future use.)
-        val minimumOk = PermissionLadder.checkStatus(context).minimumToStartGranted
+        val status = PermissionLadder.checkStatus(context)
+        val minimumOk = status.minimumToStartGranted
         val wasEnabled = _uiState.value.automaticActivitiesEnabled
-        _uiState.update { it.copy(locationPermissionSufficient = minimumOk) }
+        // P2 (additive, cosmetic): derive the gear-glow health from the SAME status (no second
+        // checkStatus call). Off when auto is disabled; else Healthy if all recommended perms are
+        // granted, otherwise Degraded. Purely presentational — never gates behavior.
+        _uiState.update {
+            it.copy(
+                locationPermissionSufficient = minimumOk,
+                autoActivitiesHealth = if (!wasEnabled) AutoActivitiesHealth.Off
+                    else if (status.allRecommendedGranted) AutoActivitiesHealth.Healthy
+                    else AutoActivitiesHealth.Degraded,
+            )
+        }
         if (!fineGranted) {
             if (wasEnabled) onAutomaticActivitiesToggled(false, context)
             _uiState.update { it.copy(locationMatch = null, isLocationLoading = false) }
@@ -596,6 +631,36 @@ class CheckViewModel @Inject constructor(
 
     fun openSettings() {
         _uiState.update { it.copy(dialogOpen = CheckDialog.Settings) }
+    }
+
+    // P2.2 (change D) — open the history dialog filtered to the tapped action. Read-only; requires a chave.
+    fun openCheckinHistory() = openCheckHistoryDialog(CheckAction.CHECKIN)
+    fun openCheckoutHistory() = openCheckHistoryDialog(CheckAction.CHECKOUT)
+
+    private fun openCheckHistoryDialog(action: CheckAction) {
+        val chave = _uiState.value.chave
+        _uiState.update {
+            it.copy(
+                dialogOpen = CheckDialog.History,
+                historyDialogAction = action,
+                historyDialogEntries = emptyList(),
+                isHistoryDialogLoading = true,
+                historyDialogError = false,
+            )
+        }
+        viewModelScope.launch {
+            when (val r = checkRepository.getHistory(chave)) {
+                is AppResult.Success ->
+                    _uiState.update {
+                        it.copy(
+                            historyDialogEntries = r.data.filter { entry -> entry.action == action },
+                            isHistoryDialogLoading = false,
+                        )
+                    }
+                is AppResult.Failure ->
+                    _uiState.update { it.copy(isHistoryDialogLoading = false, historyDialogError = true) }
+            }
+        }
     }
 
     fun openPasswordChangeDialog() {
@@ -982,15 +1047,22 @@ class CheckViewModel @Inject constructor(
     // ─── Automatic Activities ─────────────────────────────────────────────────
 
     fun openAutoActivitiesDialog() {
-        _uiState.update { it.copy(dialogOpen = CheckDialog.AutoActivities) }
+        // P5: opening the dialog (incl. the nudge's "Ativar agora") hides the transient nudge card.
+        _uiState.update { it.copy(dialogOpen = CheckDialog.AutoActivities, showAutoActivitiesNudge = false) }
+    }
+
+    // P5: per-chave persisted dismissal flag for the first-login nudge (generic flag API — no schema change).
+    private fun nudgeFlag(chave: String) = "auto_activities_prompt_dismissed_$chave"
+
+    // P5: "Agora não" — dismiss the nudge forever for this chave and hide it now.
+    fun dismissAutoActivitiesNudge() {
+        val chave = _uiState.value.chave
+        viewModelScope.launch { appPreferences.setFlag(nudgeFlag(chave), true) }
+        _uiState.update { it.copy(showAutoActivitiesNudge = false) }
     }
 
     fun openScheduledPauseDialog() {
         _uiState.update { it.copy(dialogOpen = CheckDialog.ScheduledPause) }
-    }
-
-    fun openPermissionsDialog() {
-        _uiState.update { it.copy(dialogOpen = CheckDialog.Permissions) }
     }
 
     fun openNotificationsDialog() {
@@ -1104,7 +1176,8 @@ class CheckViewModel @Inject constructor(
         viewModelScope.launch {
             val chave = _uiState.value.chave
             persistAutoActivitiesEnabled(chave, enabled)
-            _uiState.update { it.copy(automaticActivitiesEnabled = enabled) }
+            // P5: enabling auto-activities resolves the nudge (recompute → false).
+            _uiState.update { it.copy(automaticActivitiesEnabled = enabled, autoActivitiesHealth = computeHealth(enabled, context), showAutoActivitiesNudge = if (enabled) false else it.showAutoActivitiesNudge) }
             if (enabled) {
                 ensureEngineRunningIfEligible(context)
             } else {
@@ -1122,7 +1195,8 @@ class CheckViewModel @Inject constructor(
         viewModelScope.launch {
             val chave = _uiState.value.chave
             persistAutoActivitiesEnabled(chave, true)
-            _uiState.update { it.copy(automaticActivitiesEnabled = true) }
+            // P5: auto-activities now on → the nudge is resolved.
+            _uiState.update { it.copy(automaticActivitiesEnabled = true, autoActivitiesHealth = computeHealth(true, context), showAutoActivitiesNudge = false) }
             ensureEngineRunningIfEligible(context)
         }
     }
@@ -1133,9 +1207,16 @@ class CheckViewModel @Inject constructor(
         viewModelScope.launch {
             val chave = _uiState.value.chave
             persistAutoActivitiesEnabled(chave, false)
-            _uiState.update { it.copy(automaticActivitiesEnabled = false) }
+            _uiState.update { it.copy(automaticActivitiesEnabled = false, autoActivitiesHealth = AutoActivitiesHealth.Off) }
         }
     }
+
+    // P2 (additive, cosmetic): gear-glow health. Off when auto is disabled; else Healthy if all recommended
+    // permissions are granted, otherwise Degraded. Reads live permission state; never gates any behavior.
+    private fun computeHealth(enabled: Boolean, context: Context): AutoActivitiesHealth =
+        if (!enabled) AutoActivitiesHealth.Off
+        else if (PermissionLadder.checkStatus(context).allRecommendedGranted) AutoActivitiesHealth.Healthy
+        else AutoActivitiesHealth.Degraded
 
     private suspend fun loadUserSettings(chave: String): UserSettings {
         val json = appPreferences.userSettingsJson.first()

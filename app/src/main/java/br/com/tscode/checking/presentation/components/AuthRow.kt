@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Settings
@@ -25,6 +26,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -32,6 +34,10 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import br.com.tscode.checking.presentation.theme.CheckingFieldAuthedBorder
+import br.com.tscode.checking.presentation.theme.CheckingFieldAuthedGlow
+import br.com.tscode.checking.presentation.theme.CheckingFieldPendingBorder
+import br.com.tscode.checking.presentation.theme.CheckingFieldPendingGlow
 import br.com.tscode.checking.presentation.theme.CheckingPrimary
 import br.com.tscode.checking.presentation.theme.CheckingTextMuted
 import br.com.tscode.checking.presentation.theme.Tokens
@@ -50,6 +56,7 @@ fun AuthRow(
     onSettingsClick: () -> Unit,
     onRequestRegistrationClick: () -> Unit,
     t: (String, Map<String, String>?) -> String,
+    autoActivitiesGlow: FieldGlow = FieldGlow.None,
     modifier: Modifier = Modifier,
 ) {
     var passwordVisible by remember { mutableStateOf(false) }
@@ -136,15 +143,41 @@ fun AuthRow(
                 )
 
                 // Settings gear — bottom-aligned with the inputs (label sits above them).
+                // P2: an optional colored glow (same shadow technique as the chave/senha fields, but
+                // CircleShape) reflects auto-activities health. clip=false → the row height is unchanged.
+                val gearGlow = when (autoActivitiesGlow) {
+                    FieldGlow.Authenticated -> CheckingFieldAuthedGlow
+                    FieldGlow.Pending -> CheckingFieldPendingGlow
+                    FieldGlow.None -> null
+                }
+                val gearTint = when (autoActivitiesGlow) {
+                    FieldGlow.Authenticated -> CheckingFieldAuthedBorder
+                    FieldGlow.Pending -> CheckingFieldPendingBorder
+                    FieldGlow.None -> CheckingPrimary
+                }
                 Box(
-                    modifier = Modifier.height(Tokens.controlHeight),
+                    modifier = Modifier
+                        .height(Tokens.controlHeight)
+                        .then(
+                            if (gearGlow != null) {
+                                Modifier.shadow(
+                                    elevation = 16.dp,
+                                    shape = CircleShape,
+                                    clip = false,
+                                    ambientColor = gearGlow,
+                                    spotColor = gearGlow,
+                                )
+                            } else {
+                                Modifier
+                            },
+                        ),
                     contentAlignment = Alignment.Center,
                 ) {
                     IconButton(onClick = onSettingsClick) {
                         Icon(
                             imageVector = Icons.Outlined.Settings,
                             contentDescription = t("auth.openSettingsAria", null),
-                            tint = CheckingPrimary,
+                            tint = gearTint,
                         )
                     }
                 }

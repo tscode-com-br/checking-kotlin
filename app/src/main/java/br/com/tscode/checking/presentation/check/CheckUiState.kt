@@ -2,14 +2,34 @@ package br.com.tscode.checking.presentation.check
 
 import br.com.tscode.checking.domain.model.AuthStatus
 import br.com.tscode.checking.domain.model.CheckAction
+import br.com.tscode.checking.domain.model.CheckHistoryEntry
 import br.com.tscode.checking.domain.model.HistoryState
 import br.com.tscode.checking.domain.model.LocationMatch
 import br.com.tscode.checking.domain.model.Project
 import br.com.tscode.checking.domain.model.UserProjects
+import br.com.tscode.checking.presentation.components.FieldGlow
 
-enum class CheckDialog { PasswordChange, SelfRegistration, Settings, AutoActivities, ScheduledPause, Permissions, Notifications, EvaluationLog }
+enum class CheckDialog { PasswordChange, SelfRegistration, Settings, AutoActivities, ScheduledPause, Notifications, EvaluationLog, History }
 
 enum class NotificationTone { None, Info, Success, Error, Teal }
+
+// Auto-activities health for the gear glow (P2). Off = disabled (no glow); Healthy = on + all recommended
+// permissions granted (green); Degraded = on but a recommended permission is missing (orange).
+enum class AutoActivitiesHealth { Off, Healthy, Degraded }
+
+// Pure mapping from health to the reusable field-glow state (mirrors the chave/senha glow). Off → no glow;
+// Healthy → green (same as authenticated field); Degraded → orange (same as pending field).
+fun AutoActivitiesHealth.toGlow(): FieldGlow = when (this) {
+    AutoActivitiesHealth.Off -> FieldGlow.None
+    AutoActivitiesHealth.Healthy -> FieldGlow.Authenticated
+    AutoActivitiesHealth.Degraded -> FieldGlow.Pending
+}
+
+// P5: pure predicate for the one-time first-login nudge. The card is shown only for an authenticated
+// user who has NOT enabled automatic activities and has NOT dismissed it (per-chave persisted flag).
+// Extracted as a top-level pure function so it is unit-testable without instantiating the ViewModel.
+fun shouldShowAutoActivitiesNudge(authenticated: Boolean, autoEnabled: Boolean, dismissed: Boolean): Boolean =
+    authenticated && !autoEnabled && !dismissed
 
 enum class UiInformeType { NORMAL, RETROATIVO }
 
@@ -55,6 +75,12 @@ data class CheckUiState(
     // History
     val historyState: HistoryState? = null,
     val isHistoryLoading: Boolean = false,
+    // P2.2 — full check-in/out history dialog (change D). `historyDialogAction` selects which action's
+    // rows the dialog shows (driven by tapping the matching HistoryCard cell).
+    val historyDialogAction: CheckAction? = null,
+    val historyDialogEntries: List<CheckHistoryEntry> = emptyList(),
+    val isHistoryDialogLoading: Boolean = false,
+    val historyDialogError: Boolean = false,
     // Transport service availability — server OR over all the user's project memberships
     // (is_transport_enabled_for_any_project). Drives the "Transporte" button visibility.
     // Tracked separately because the POST /check response doesn't carry this flag.
@@ -86,13 +112,19 @@ data class CheckUiState(
 
     // Auto activities
     val automaticActivitiesEnabled: Boolean = false,
+    // Health of the auto-activities engine, for the gear glow (P2). Off when disabled; Healthy/Degraded
+    // (derived in the ViewModel) when enabled. Purely presentational — never gates behavior.
+    val autoActivitiesHealth: AutoActivitiesHealth = AutoActivitiesHealth.Off,
+    // P5: one-time, dismissible first-login nudge to enable automatic activities (per-chave; persisted
+    // via the generic flag API). Transient card in the Check screen body — see shouldShowAutoActivitiesNudge.
+    val showAutoActivitiesNudge: Boolean = false,
 
-    // Scheduled pause (§23.4.2)
-    val scheduledPauseEnabled: Boolean = false,
-    val scheduledPauseFrom: String = "22:00",
-    val scheduledPauseTo: String = "06:00",
-    val suspendSaturdays: Boolean = false,
-    val suspendSundays: Boolean = false,
+    // Scheduled pause (§23.4.2) — install defaults: on 20:00–07:00 daily + full-day Sat/Sun suspension.
+    val scheduledPauseEnabled: Boolean = true,
+    val scheduledPauseFrom: String = "20:00",
+    val scheduledPauseTo: String = "07:00",
+    val suspendSaturdays: Boolean = true,
+    val suspendSundays: Boolean = true,
 
     // Push-notification preferences
     val notifyActivities: Boolean = true,

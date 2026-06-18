@@ -2,6 +2,7 @@ package br.com.tscode.checking.domain.repository
 
 import br.com.tscode.checking.core.result.AppResult
 import br.com.tscode.checking.domain.model.CheckAction
+import br.com.tscode.checking.domain.model.CheckHistoryEntry
 import br.com.tscode.checking.domain.model.GeofenceCircle
 import br.com.tscode.checking.domain.model.HistoryState
 import br.com.tscode.checking.domain.model.InformeType
@@ -12,6 +13,8 @@ import java.time.Instant
 
 interface CheckRepository {
     suspend fun getState(chave: String): AppResult<HistoryState>
+    // Full check-in/out history (newest-first), including location (change D). Read-only.
+    suspend fun getHistory(chave: String): AppResult<List<CheckHistoryEntry>>
     // SSE stream of check-state change events (/check/stream). Emits on every server-side
     // change (e.g. an admin toggling a project's transport flag) so the UI can re-sync.
     fun streamEvents(chave: String): Flow<String>

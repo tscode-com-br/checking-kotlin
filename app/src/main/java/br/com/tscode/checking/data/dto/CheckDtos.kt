@@ -58,6 +58,22 @@ data class WebCheckHistoryResponse(
     @SerialName("transport_enabled") val transportEnabled: Boolean,
 )
 
+// GET /check/history (change D). `time` is an ISO-8601 string parsed at the repository boundary,
+// exactly like the timestamps in WebCheckHistoryResponse above.
+@Serializable
+data class WebCheckHistoryItemDto(
+    val action: CheckAction,
+    val projeto: String,
+    val local: String? = null,
+    val time: String,
+    val informe: InformeType,
+)
+
+@Serializable
+data class WebCheckHistoryListResponseDto(
+    val items: List<WebCheckHistoryItemDto> = emptyList(),
+)
+
 @Serializable
 data class WebLocationOptionsResponse(
     val items: List<String>,

@@ -25,7 +25,7 @@ import br.com.tscode.checking.domain.repository.AuthRepository
 import br.com.tscode.checking.domain.repository.CheckRepository
 import br.com.tscode.checking.domain.usecase.AutoActivitiesResult
 import br.com.tscode.checking.domain.usecase.RunAutomaticActivitiesUseCase
-import br.com.tscode.checking.i18n.DEFAULT_LANGUAGE
+import br.com.tscode.checking.i18n.resolveEffectiveLanguageCode
 import br.com.tscode.checking.platform.background.diagnostics.EvaluationEntry
 import br.com.tscode.checking.platform.background.diagnostics.EvaluationLog
 import br.com.tscode.checking.platform.background.diagnostics.EvaluationOutcome
@@ -105,7 +105,7 @@ class BackgroundCheckOrchestrator @Inject constructor(
             runOnceLocked(trigger)
             if (isSessionExpired) {
                 val chave = appPrefs.chave.first().ifEmpty { return }
-                val lang = appPrefs.language.first().ifEmpty { DEFAULT_LANGUAGE }
+                val lang = resolveEffectiveLanguageCode(appPrefs.language.first())
                 if (attemptSilentRelogin(chave, lang)) {
                     isSessionExpired = false
                     runOnceLocked(trigger) // retry once after successful re-login
@@ -126,7 +126,7 @@ class BackgroundCheckOrchestrator @Inject constructor(
         try {
             val chave = appPrefs.chave.first()
             if (chave.isEmpty()) return
-            val lang = appPrefs.language.first().ifEmpty { DEFAULT_LANGUAGE }
+            val lang = resolveEffectiveLanguageCode(appPrefs.language.first())
             val rawJson = appPrefs.userSettingsJson.first()
             val settingsMap: Map<String, UserSettings?> = runCatching {
                 settingsJson.decodeFromString<Map<String, UserSettings?>>(rawJson)
@@ -149,7 +149,7 @@ class BackgroundCheckOrchestrator @Inject constructor(
         // Step 1: Auth — chave must be present (session cookie persisted by OkHttp).
         // 401 during network calls sets isSessionExpired; runOnce() handles the retry.
         val chave = appPrefs.chave.first().ifEmpty { return }
-        val lang = appPrefs.language.first().ifEmpty { DEFAULT_LANGUAGE }
+        val lang = resolveEffectiveLanguageCode(appPrefs.language.first())
 
         // Step 2: Toggle + scheduled pause
         val rawJson = appPrefs.userSettingsJson.first()

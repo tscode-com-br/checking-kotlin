@@ -100,15 +100,40 @@ class PendingCheckReplayerTest {
 
     @Test
     fun raw_with_no_action_is_consumed_without_submitting() = runTest {
+        // NOT_IN_KNOWN_LOCATION after a check-OUT → still no action (engine returns null); consumed.
         pending.add(raw("r", at = 3000))
         coEvery { checkRepository.matchLocation(any(), any(), any()) } returns
             AppResult.Success(match(MatchStatus.NOT_IN_KNOWN_LOCATION))
-        coEvery { checkRepository.getState(chave) } returns AppResult.Success(state(CheckAction.CHECKIN))
+        coEvery { checkRepository.getState(chave) } returns AppResult.Success(state(CheckAction.CHECKOUT))
         coEvery { checkRepository.getLocations() } returns AppResult.Success(options)
 
         assertEquals(PendingCheckReplayer.DrainResult.COMPLETED, replayer.drain())
         assertTrue(pending.isEmpty())
         coVerify(exactly = 0) { checkRepository.submit(any(), any(), any(), any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun raw_not_in_known_location_after_checkin_replays_unregistered_checkin() = runTest {
+        // Change A continuation (P6.2): offline replay must coherently submit the "Localização não
+        // Cadastrada" check-in (last action = check-in at a registered location), with the ORIGINAL
+        // time + id. (Relies on the Phase-5 backend relaxation for the app client.)
+        pending.add(raw("r", at = 3000))
+        coEvery { checkRepository.matchLocation(any(), any(), any()) } returns
+            AppResult.Success(match(MatchStatus.NOT_IN_KNOWN_LOCATION))
+        coEvery { checkRepository.getState(chave) } returns
+            AppResult.Success(state(CheckAction.CHECKIN).copy(currentLocal = "Unidade P80"))
+        coEvery { checkRepository.getLocations() } returns AppResult.Success(options)
+        coEvery { checkRepository.submit(any(), any(), any(), any(), any(), any(), any()) } returns
+            AppResult.Success(state(CheckAction.CHECKIN))
+
+        assertEquals(PendingCheckReplayer.DrainResult.COMPLETED, replayer.drain())
+        assertTrue(pending.isEmpty())
+        coVerify {
+            checkRepository.submit(
+                chave, projeto, CheckAction.CHECKIN, "Localização não Cadastrada", InformeType.NORMAL,
+                Instant.ofEpochMilli(3000), "r",
+            )
+        }
     }
 
     @Test

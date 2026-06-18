@@ -26,6 +26,17 @@ data class HistoryState(
     val transportEnabled: Boolean,
 )
 
+// One row of the per-user check-in/out history (change D). `time` is nullable: it is parsed from the
+// server's ISO-8601 string at the repository boundary (same parser as HistoryState timestamps), and a
+// null means "unparseable/absent" → the dialog renders "-" for that cell (mirrors HistoryCard).
+data class CheckHistoryEntry(
+    val action: CheckAction,
+    val projeto: String,
+    val local: String?,
+    val time: Instant?,
+    val informe: InformeType,
+)
+
 data class LocationMatch(
     val matched: Boolean,
     val resolvedLocal: String?,

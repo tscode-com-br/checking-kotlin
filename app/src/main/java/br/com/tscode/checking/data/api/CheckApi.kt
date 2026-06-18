@@ -1,6 +1,7 @@
 package br.com.tscode.checking.data.api
 
 import br.com.tscode.checking.data.dto.MobileSubmitResponse
+import br.com.tscode.checking.data.dto.WebCheckHistoryListResponseDto
 import br.com.tscode.checking.data.dto.WebCheckHistoryResponse
 import br.com.tscode.checking.data.dto.WebCheckSubmitRequest
 import br.com.tscode.checking.data.dto.WebGeofencesResponse
@@ -15,6 +16,9 @@ import retrofit2.http.Query
 interface CheckApi {
     @GET("check/state")
     suspend fun getState(@Query("chave") chave: String): WebCheckHistoryResponse
+
+    @GET("check/history")
+    suspend fun getHistory(@Query("chave") chave: String): WebCheckHistoryListResponseDto
 
     @GET("check/locations")
     suspend fun getLocations(): WebLocationOptionsResponse

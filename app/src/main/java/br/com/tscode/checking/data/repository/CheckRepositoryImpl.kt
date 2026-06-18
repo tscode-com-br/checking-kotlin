@@ -10,11 +10,13 @@ import br.com.tscode.checking.data.dto.CheckAction as DtoCheckAction
 import br.com.tscode.checking.data.dto.InformeType as DtoInformeType
 import br.com.tscode.checking.data.dto.LocationMatchStatus
 import br.com.tscode.checking.data.dto.MobileSyncStateResponse
+import br.com.tscode.checking.data.dto.WebCheckHistoryItemDto
 import br.com.tscode.checking.data.dto.WebCheckHistoryResponse
 import br.com.tscode.checking.data.dto.WebLocationMatchResponse
 import br.com.tscode.checking.data.remote.safeApiCall
 import br.com.tscode.checking.data.remote.sse.CheckEventStream
 import br.com.tscode.checking.domain.model.CheckAction
+import br.com.tscode.checking.domain.model.CheckHistoryEntry
 import br.com.tscode.checking.domain.model.GeofenceCircle
 import br.com.tscode.checking.domain.model.HistoryState
 import br.com.tscode.checking.domain.model.InformeType
@@ -46,6 +48,10 @@ class CheckRepositoryImpl @Inject constructor(
 
     override suspend fun getState(chave: String): AppResult<HistoryState> = safeApiCall {
         checkApi.getState(chave).toDomain()
+    }
+
+    override suspend fun getHistory(chave: String): AppResult<List<CheckHistoryEntry>> = safeApiCall {
+        checkApi.getHistory(chave).items.map { it.toDomain() }
     }
 
     override suspend fun getLocations(): AppResult<LocationOptions> = safeApiCall {
@@ -142,9 +148,22 @@ class CheckRepositoryImpl @Inject constructor(
         nearestWorkplaceDistanceMeters = nearestWorkplaceDistanceMeters,
     )
 
+    private fun WebCheckHistoryItemDto.toDomain() = CheckHistoryEntry(
+        action = action.toDomain(),
+        projeto = projeto,
+        local = local,
+        time = time.parseInstant(),
+        informe = informe.toDomain(),
+    )
+
     private fun DtoCheckAction.toDomain() = when (this) {
         DtoCheckAction.CHECKIN -> CheckAction.CHECKIN
         DtoCheckAction.CHECKOUT -> CheckAction.CHECKOUT
+    }
+
+    private fun DtoInformeType.toDomain() = when (this) {
+        DtoInformeType.NORMAL -> InformeType.NORMAL
+        DtoInformeType.RETROATIVO -> InformeType.RETROATIVO
     }
 
     private fun CheckAction.toDto() = when (this) {

@@ -32,11 +32,11 @@ import java.time.Instant
  * mocked location/repository, so it covers the branching in resolveActivity AND the pure decision
  * functions in AutoActivities.kt.
  *
- * The engine MUST mirror the production web app (sistema/app/static/check/automatic-activities.js +
- * app.js): only a real polygon MATCH or OUTSIDE_WORKPLACE acts; NOT_IN_KNOWN_LOCATION ("near, but not
- * inside any registered area") is NEVER an automatic check-in target (so S5 and the "near" sub-case
- * of S3/S7B do nothing — and the app never submits "Localização não Cadastrada", which the server
- * rejects with 422).
+ * Change A (plan002 EP6) updates the engine: a MATCHED re-check-in fires only on a location CHANGE
+ * (P6.1 — suppresses the duplicate same-location check-in); and NOT_IN_KNOWN_LOCATION ("near, but not
+ * inside any registered area") AFTER a check-in records a check-in at "Localização não Cadastrada" as a
+ * CHANGE (P6.2 continuation — enabled for the app by the Phase-5 backend relaxation). A checked-OUT user
+ * out-of-area still does nothing (Situação 3/7B). Check-out branches are unchanged.
  */
 class AutoActivitiesSituationTest {
 
@@ -151,20 +151,43 @@ class AutoActivitiesSituationTest {
         )
     }
 
-    // ─── Situation 4: last=check-in, in a registered location → re-CHECK-IN ───────
+    // ─── Situation 4: last=check-in, in the SAME registered location → NO action ──
+    // Change A (P6.1): re-check-in at the same location is suppressed (root-cause fix for the duplicate).
     @Test
-    fun s4_checkin_in_registered_location_rechecks_in() = runTest {
-        assertSubmitted(
+    fun s4_checkin_same_registered_location_no_action() = runTest {
+        assertNoSubmit(
             run(match(MatchStatus.MATCHED, "Unidade P80"), history(CheckAction.CHECKIN, currentLocal = "Unidade P80")),
-            CheckAction.CHECKIN, "Unidade P80",
         )
     }
 
-    // ─── Situation 5: last=check-in, near but not registered → NO action ──────────
+    // ─── Situation 4: last=check-in, moved to a DIFFERENT registered location → re-CHECK-IN ─
     @Test
-    fun s5_checkin_near_not_registered_no_action() = runTest {
+    fun s4_checkin_different_registered_location_rechecks_in() = runTest {
+        assertSubmitted(
+            run(match(MatchStatus.MATCHED, "Unidade P81"), history(CheckAction.CHECKIN, currentLocal = "Unidade P80")),
+            CheckAction.CHECKIN, "Unidade P81",
+        )
+    }
+
+    // ─── Situation 5: last=check-in, near but not registered → CHECK-IN "Localização não Cadastrada" ─
+    // Change A continuation (P6.2): the checked-in user moved out of the registered area → record the
+    // continuation as a CHANGE. (Requires the Phase-5 backend relaxation for the app client.)
+    @Test
+    fun s5_checkin_near_not_registered_checks_in_unregistered() = runTest {
+        assertSubmitted(
+            run(match(MatchStatus.NOT_IN_KNOWN_LOCATION, nearest = 500.0), history(CheckAction.CHECKIN, currentLocal = "Unidade P80")),
+            CheckAction.CHECKIN, "Localização não Cadastrada",
+        )
+    }
+
+    // ─── Situation 5 (no repeat): last check-in ALREADY "Localização não Cadastrada" → NO action ──
+    @Test
+    fun s5_checkin_already_unregistered_no_repeat() = runTest {
         assertNoSubmit(
-            run(match(MatchStatus.NOT_IN_KNOWN_LOCATION, nearest = 500.0), history(CheckAction.CHECKIN)),
+            run(
+                match(MatchStatus.NOT_IN_KNOWN_LOCATION, nearest = 500.0),
+                history(CheckAction.CHECKIN, currentLocal = "Localização não Cadastrada"),
+            ),
         )
     }
 

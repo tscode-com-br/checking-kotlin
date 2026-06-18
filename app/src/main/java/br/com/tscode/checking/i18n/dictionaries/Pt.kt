@@ -33,6 +33,13 @@ fun ptDictionary(): Map<String, Any> = d(
         "lastCheckoutLabel" to "Último Check-Out",
         "today" to "Hoje",
         "yesterday" to "Ontem",
+        "dialogTitleCheckin" to "Histórico de Check-In",
+        "dialogTitleCheckout" to "Histórico de Check-Out",
+        "colDate" to "Data",
+        "colTime" to "Hora",
+        "colLocal" to "Local",
+        "empty" to "Nenhum registro encontrado.",
+        "back" to "Voltar",
         "loadingMessage" to "Consultando histórico...",
         "notFoundMessage" to "Nenhum registro encontrado para esta chave.",
         "noRecordsMessage" to "Nenhum check-in ou check-out registrado para esta chave.",
@@ -57,17 +64,24 @@ fun ptDictionary(): Map<String, Any> = d(
     "settings" to d(
         "title" to "Ajustes",
         "languageLabel" to "Idioma",
-        "resetPasswordLabel" to "Resetar Senha",
+        "resetPasswordLabel" to "Alterar Senha",
         "allowLocationLabel" to "Permitir localização",
         "allowAudioVideoLabel" to "Permitir Audio & Video",
-        "permissionsLabel" to "Permissões",
-        "notificationsLabel" to "Notificações",
+        "notificationsLabel" to "Avisos",
+        "instructionsLabel" to "Instruções",
         "supportLabel" to "Suporte",
+        "manualLabel" to "Manual completo",
         "aboutLabel" to "Sobre",
         "backButton" to "Voltar",
+        "groupAutoActivities" to "Atividades Automáticas",
+        "groupPreferences" to "Preferências",
+        "groupHelp" to "Ajuda",
+        "statusOn" to "Ativadas",
+        "statusAttention" to "Atenção",
+        "statusOff" to "Desativadas",
     ),
     "notifications" to d(
-        "title" to "Notificações",
+        "title" to "Avisos",
         "intro" to "Habilite as notificações para ficar ciente sempre que o Checking realizar alguma atividade automaticamente ou para ficar por dentro de acontecimentos importantes. Habilite notificações 'push' para:",
         "checkboxActivities" to "notificarem quando uma atividade for realizada automaticamente.",
         "checkboxScheduledPause" to "saber quando o aplicativo iniciar ou finalizar o modo 'Pausa Programada'.",
@@ -480,10 +494,10 @@ fun ptDictionary(): Map<String, Any> = d(
             "passwordChange" to d(
                 "title" to "Resetar ou trocar senha",
                 "lead" to "A alteração de senha saiu da linha principal de autenticação e agora fica concentrada em Ajustes.",
-                "item1" to "Abra Ajustes, toque em Resetar Senha e use o modal existente de troca de senha.",
+                "item1" to "Abra Ajustes, toque em Alterar Senha e use o modal existente de troca de senha.",
                 "item2" to "O fluxo pede senha antiga, nova senha e confirmação, preservando as validações já existentes.",
                 "item3" to "O botão só fica habilitado quando o usuário já está autenticado e possui uma senha cadastrada.",
-                "figureCaption" to "Fluxo de troca de senha iniciado a partir de Ajustes > Resetar Senha.",
+                "figureCaption" to "Fluxo de troca de senha iniciado a partir de Ajustes > Alterar Senha.",
             ),
             "settings" to d(
                 "title" to "Ajustes",
@@ -599,6 +613,13 @@ fun ptDictionary(): Map<String, Any> = d(
         "enable" to "Habilitar Atividades Automáticas",
         "insufficientPermissions" to "Permissões mínimas não concedidas. Em Ajustes › Permissões, conceda Notificações e Localização Exata para ativar as atividades automáticas.",
         "reducedReliability" to "Atividades automáticas ativas. Para funcionarem de forma confiável em segundo plano, conceda a Localização como 'Permitir o tempo todo' e desative a otimização de bateria em Ajustes › Permissões.",
+        "permNotifications" to "Notificações",
+        "permLocationAllTime" to "Localização 'o tempo todo'",
+        "permBattery" to "Bateria sem restrição",
+        "permAutoStart" to "Iniciar com o aparelho",
+        "nudgeQuestion" to "Quer que o Checking faça check-in e check-out automaticamente, com base na sua localização?",
+        "nudgeActivate" to "Ativar agora",
+        "nudgeLater" to "Agora não",
         "reviewPermissions" to "Revisar Permissões",
         "permissionsNotice" to "Para que as atividades automáticas possam ocorrer de forma confiável, todas as permissões solicitadas devem ser concedidas ao Checking.",
         "permStep" to d(
@@ -636,5 +657,254 @@ fun ptDictionary(): Map<String, Any> = d(
         "suspendSundays" to "Suspender aos domingos.",
         "close" to "Fechar",
         "notificationPaused" to "Pausa programada ativa",
+    ),
+    "instructions" to d(
+        "heading" to "Instruções",
+        "intro" to "Este guia mostra, passo a passo, como usar o Checking: registrar presença manualmente, ativar o Modo Automático (check-in e check-out por localização) e configurar a Pausa Programada.",
+        "step1" to d(
+            "title" to "1. Entrar no aplicativo",
+            "item1" to "Na tela inicial, digite sua chave de 4 caracteres no campo 'Chave'. O campo fica laranja quando a chave é encontrada.",
+            "item2" to "Digite sua senha no campo 'Senha'. Ao autenticar, os campos ficam verdes e aparece 'Autenticação concluída'.",
+            "item3" to "Se você ainda não tem senha, o app abre o cadastro de senha automaticamente; se a chave não existir, ele oferece o autocadastro.",
+        ),
+        "step2" to d(
+            "title" to "2. Registrar presença manualmente",
+            "item1" to "Escolha 'Check-In' ou 'Check-Out' e o tipo 'Normal' ou 'Retroativo'.",
+            "item2" to "Com o Modo Automático desligado, selecione o 'Local' na lista e toque em 'Registrar Check-In' (ou 'Check-Out').",
+            "item3" to "O cartão no topo mostra seu último check-in e check-out; toque nele para ver a lista completa com data, hora e local.",
+        ),
+        "step3" to d(
+            "title" to "3. Ativar o Modo Automático",
+            "lead" to "Com o Modo Automático, o app faz check-in e check-out sozinho, com base na sua localização — ao entrar ou sair de uma área cadastrada, ao trazer o app para primeiro plano e em verificações periódicas.",
+            "item1" to "Toque na engrenagem (ao lado dos campos de chave/senha) para abrir 'Ajustes'.",
+            "item2" to "Toque em 'Atividades Automáticas' e marque a caixa 'Habilitar Atividades Automáticas'.",
+            "item3" to "Conceda cada permissão da lista que aparece, tocando nela: Notificações, Localização 'o tempo todo' (Permitir sempre), Bateria sem restrição e — em alguns aparelhos — 'Iniciar com o aparelho'.",
+            "item4" to "Quando a engrenagem fica com brilho VERDE, o Modo Automático está ativo e saudável. Brilho LARANJA indica que falta uma permissão recomendada.",
+            "callout" to "Importante: para funcionar de forma confiável em segundo plano, conceda a Localização como 'Permitir o tempo todo' e desative a otimização de bateria para o Checking.",
+        ),
+        "step4" to d(
+            "title" to "4. Ativar a Pausa Programada",
+            "lead" to "A Pausa Programada economiza bateria suspendendo as atividades automáticas durante um período (por exemplo, à noite).",
+            "item1" to "Em 'Ajustes', toque em 'Pausa Programada'.",
+            "item2" to "Ative a opção e defina os horários 'De' e 'Até' (por exemplo, das 22:00 às 06:00).",
+            "item3" to "Se quiser, marque também 'Suspender aos sábados' e/ou 'Suspender aos domingos'.",
+            "item4" to "Durante a pausa, o app não realiza nenhuma atividade automática; ele retoma sozinho ao fim do período.",
+        ),
+        "step5" to d(
+            "title" to "5. Acompanhar o histórico",
+            "item1" to "Toque em 'ÚLTIMO CHECK-IN' ou 'ÚLTIMO CHECK-OUT' para abrir a tabela com Data, Hora e Local de cada registro.",
+            "item2" to "Registros feitos próximos, porém fora de uma área cadastrada, aparecem como 'Localização não Cadastrada'.",
+            "item3" to "Mesmo sem internet, seus registros ficam salvos no aparelho e são enviados assim que a conexão volta, sempre com o horário original.",
+        ),
+        "step6" to d(
+            "title" to "6. Solicitar transporte",
+            "item1" to "Toque em 'Transporte' para abrir o módulo de transporte de pessoal.",
+            "item2" to "Informe o endereço e o horário desejados e envie a solicitação.",
+            "item3" to "O responsável pela logística organiza as viagens; um motor de inteligência artificial sugere como agrupar passageiros e ordenar as paradas.",
+        ),
+        "step7" to d(
+            "title" to "7. Em caso de acidente",
+            "lead" to "O Modo Acidente é um recurso de segurança. Use-o apenas em uma emergência real.",
+            "item1" to "Qualquer usuário pode abrir o Modo Acidente; isso avisa, em tempo real, todos os usuários do mesmo projeto.",
+            "item2" to "Informe sua situação e zona: 'em segurança', 'no local do acidente, mas em segurança' ou 'no local do acidente e precisando de ajuda'.",
+            "item3" to "Se possível, grave um vídeo do local: ele é enviado em tempo real para o painel do administrador.",
+            "item4" to "O botão 'Acionar Serviço de Emergência' liga para o serviço de emergência local, informando o acidente e o local no idioma da região.",
+        ),
+        "step8" to d(
+            "title" to "8. Outros ajustes",
+            "item1" to "'Avisos': escolha quais notificações receber (atividades, pausa programada, acidente).",
+            "item2" to "'Idioma': troque o idioma do aplicativo.",
+            "item3" to "'Alterar Senha': defina uma nova senha quando precisar.",
+            "item4" to "'Suporte': fale direto com a equipe pelo WhatsApp.",
+            "item5" to "'Sobre': conheça a história do Checking e as partes que compõem o sistema.",
+        ),
+        "closing" to "Pronto! Com o Modo Automático ativo, você não precisa registrar nada manualmente — o Checking cuida disso por você.",
+    ),
+    "about" to d(
+        "heading" to "Sobre o Checking",
+        "introTitle" to "Como nasceu o Checking",
+        "introBody" to "O Checking começou a ser desenvolvido em março de 2026, a partir da idealização do Engenheiro Dilnei Schmidt.\n" +
+            "\n" +
+            "Havia a necessidade de identificar rapidamente todos os funcionários da Petrobras presentes no local onde os trabalhos de construção e montagem aconteciam, caso ocorresse um acidente.\n" +
+            "\n" +
+            "A primeira solução do corpo gerencial de SMS foi um formulário online, preenchido por cada funcionário na chegada e na saída do local de trabalho. Funcionava para identificar quem estava presente, mas era trabalhoso e muitos esqueciam de preencher.\n" +
+            "\n" +
+            "Para aumentar a eficiência, Dilnei desenvolveu um aplicativo capaz de:\n" +
+            "• identificar, por GPS, a proximidade do usuário com o local de trabalho e avisá-lo da necessidade de check-in;\n" +
+            "• pré-ajustar alarmes em horários típicos de check-in e check-out, lembrando o usuário de preencher o formulário;\n" +
+            "• preencher automaticamente o formulário com os dados do usuário e enviá-lo online.\n" +
+            "\n" +
+            "Isso facilitou as atividades e aumentou a frequência de preenchimento.\n" +
+            "\n" +
+            "Ainda em março de 2026, o Engenheiro Tamer Salmem conheceu as soluções implementadas e avançou no uso das tecnologias atuais de programação, desenvolvendo o sistema inicialmente idealizado por Dilnei.\n" +
+            "\n" +
+            "A intenção era que o usuário não precisasse se preocupar em abrir um aplicativo para fazer check-in ou check-out. Além disso, criar um controle em tempo real para que os administradores soubessem não apenas quem estava no trabalho, mas em qual das localizações cadastradas de cada projeto cada usuário estava — aumentando a capacidade de resposta em emergências.\n" +
+            "\n" +
+            "Assim, o sistema ganhou:\n" +
+            "• ativação de serviços por geofencing (conforme a proximidade do usuário com o local de trabalho);\n" +
+            "• execução de tarefas em segundo plano — check-in a cada mudança de localização dentro das instalações e check-out ao se afastar, sem o usuário sequer desbloquear o aparelho;\n" +
+            "• envio em tempo real da localização dos usuários para o painel do administrador;\n" +
+            "• possibilidade de cadastrar quantos projetos forem necessários, em qualquer lugar do mundo.\n" +
+            "\n" +
+            "O sistema também pode entrar no 'Modo Acidente'. Em caso de acidente, qualquer usuário pode disparar um alarme que avisa, em tempo real, todos os usuários do mesmo projeto. Com o Modo Acidente ativo:\n" +
+            "• uma tabela é criada no painel do administrador, listando a situação de cada usuário: 'em segurança', 'no local do acidente, mas em segurança' e 'no local do acidente e precisando de ajuda';\n" +
+            "• o usuário pode gravar um vídeo e enviá-lo em tempo real, como link na tabela, para o administrador ver cenas do local;\n" +
+            "• o botão 'Acionar Serviço de Emergência' liga para o serviço de emergência local cadastrado, informando o acidente, o local e o contato do responsável, falando no idioma da região.\n" +
+            "\n" +
+            "A robustez e a confiabilidade do sistema trouxeram segurança operacional e resposta imediata para a equipe de SMS da Petrobras.\n" +
+            "\n" +
+            "Por fim, o Engenheiro Thiago Soares do Nascimento integrou as informações geradas pelo sistema aos dashboards gerenciais existentes, de modo que o novo sistema atue junto com o antigo preenchimento de formulários, mantendo os controles gerenciais atualizados.\n" +
+            "\n" +
+            "Assim nasceu o CHECKING.",
+        "partsTitle" to "As partes do sistema",
+        "partsIntro" to "O Checking é um sistema de controle de presença que registra a entrada e a saída de colaboradores nos locais de trabalho. Funciona por diferentes canais — leitores de cartão RFID instalados no local, um aplicativo Android, uma página web acessível pelo celular e um painel de administração — reunindo tudo em um só lugar.\n" +
+            "\n" +
+            "O conjunto é formado por:\n" +
+            "• uma API, desenvolvida em Python/FastAPI;\n" +
+            "• um website para os administradores do sistema;\n" +
+            "• uma aplicação Web, responsiva para celulares e desktops;\n" +
+            "• um dashboard para controle de transporte de pessoal;\n" +
+            "• um aplicativo exclusivo para Android, desenvolvido em Kotlin.",
+        "partApiTitle" to "API",
+        "partApiBody" to "A API é o cérebro do sistema. Sempre que alguém faz check-in ou check-out — pelo leitor físico, pelo aplicativo ou pela página web — é ela que recebe a informação, verifica se está correta, salva no banco de dados e avisa os demais componentes em tempo real.\n" +
+            "\n" +
+            "Ela também preenche automaticamente o formulário corporativo no Microsoft Forms após cada registro, coordena o sistema de transporte, dispara alertas de emergência em caso de acidente e garante que nenhum dado se perca quando há instabilidade de conexão.",
+        "partWebsiteTitle" to "Website",
+        "partWebsiteBody" to "O website é o painel dos administradores. Por ele é possível ver em tempo real quem está em check-in e quem está em check-out, além de gerenciar todo o sistema sem conhecimento técnico.\n" +
+            "\n" +
+            "Principais funções: cadastrar e editar colaboradores, criar projetos e suas regras, definir as áreas geográficas reconhecidas, consultar relatórios de presença e exportar dados. É também o ponto central para acionar e acompanhar o Modo Acidente — vendo a situação de cada colaborador em tempo real e coordenando a resposta de emergência.",
+        "partWebappTitle" to "Aplicação Web",
+        "partWebappBody" to "A aplicação web é a ferramenta dos colaboradores. Funciona no navegador do celular ou do computador, sem instalar nada, e permite registrar entrada e saída, consultar o histórico e solicitar transporte.\n" +
+            "\n" +
+            "Ao ativar as Atividades Automáticas, o próprio celular detecta a localização e faz check-in ou check-out automaticamente ao entrar ou sair das áreas cadastradas. Em caso de acidente, a interface muda e passa a pedir que o colaborador informe sua situação e zona de segurança.\n" +
+            "\n" +
+            "Está disponível em seis idiomas (português, inglês, chinês, malaio, indonésio e tagalo) para atender equipes internacionais.",
+        "partTransportTitle" to "Dashboard de Transportes",
+        "partTransportBody" to "O dashboard de transportes é a ferramenta do responsável pela logística de deslocamento. Por ele é possível cadastrar os veículos, visualizar e organizar as solicitações de transporte dos colaboradores e alocar cada pessoa em um veículo para o dia.\n" +
+            "\n" +
+            "Conta com um motor de inteligência artificial que analisa endereços e horários e sugere automaticamente como agrupar passageiros e ordenar as paradas de forma otimizada — reduzindo o tempo de deslocamento e o número de viagens. O responsável pode aceitar a sugestão, ajustá-la ou montar a alocação manualmente.",
+        "partAndroidTitle" to "Aplicativo Android",
+        "partAndroidBody" to "O aplicativo Android oferece as mesmas funções da aplicação web, com uma experiência mais completa no dia a dia. A principal vantagem é a automação por geolocalização: o app roda em segundo plano e registra check-in ou check-out automaticamente conforme o colaborador entra e sai das áreas cadastradas, sem depender do navegador.\n" +
+            "\n" +
+            "Ele também funciona sem internet: sem conexão, os registros ficam salvos no celular e são enviados assim que a conexão volta, sempre com o horário original. Inclui o histórico com data, hora e local de cada evento, o módulo de transporte e o modo de emergência para acidentes.",
+        "rulesTitle" to "Situações de check-in e check-out",
+        "rulesIntro" to "As situações abaixo descrevem, passo a passo, o que o sistema deve fazer para cada usuário (check-in ou check-out) em cada cenário típico. A Aplicação Web e o Aplicativo Nativo seguem as regras de seus respectivos blocos.",
+        "rulesWebTitle" to "Situações — Aplicação Web",
+        "rulesWebBody" to "## Situação 1 — Check-out por afastamento\n" +
+            "• Atividades Automáticas habilitadas, com permissão total de localização.\n" +
+            "• A última atividade foi um check-in.\n" +
+            "• O app atualiza a localização e percebe que o usuário está na 'Zona de CheckOut' ou a mais de 2 km de qualquer local cadastrado (exceto a Zona de CheckOut).\n" +
+            "• Como a última atividade foi um check-in, o app realiza o check-out.\n" +
+            "\n" +
+            "## Situação 2 — Já em check-out, longe ou na Zona de CheckOut\n" +
+            "• A última atividade foi um check-out.\n" +
+            "• O usuário está na 'Zona de CheckOut' ou a mais de 2 km de qualquer local cadastrado.\n" +
+            "• Nenhuma ação: o check-out não se repete por mudança de localização.\n" +
+            "\n" +
+            "## Situação 3 — Chegada ao trabalho (check-in)\n" +
+            "• A última atividade foi um check-out.\n" +
+            "• O usuário está DENTRO de uma área cadastrada diferente da 'Zona de CheckOut' (correspondência efetiva com a área, não apenas proximidade).\n" +
+            "• O usuário está efetivamente no trabalho (inclusive no primeiro check-in do dia).\n" +
+            "• O app realiza o check-in e atualiza a localização para a área cadastrada correspondente.\n" +
+            "! IMPORTANTE: se o usuário NÃO estiver dentro de nenhuma área cadastrada — ainda que próximo (menos de 2 km de alguma coordenada, fora a Zona de CheckOut) —, o app NÃO faz check-in automático; apenas exibe 'Localização não Cadastrada' (igual à Situação 5).\n" +
+            "\n" +
+            "## Situação 4 — Novo check-in (sempre)\n" +
+            "• A última atividade foi um check-in.\n" +
+            "• O usuário está em uma área cadastrada diferente da 'Zona de CheckOut'.\n" +
+            "• O app realiza um novo check-in INDEPENDENTEMENTE de a localização ter mudado.\n" +
+            "• Mesmo no MESMO local do último check-in, um novo check-in é feito para registrar/atualizar a localização e o horário.\n" +
+            "\n" +
+            "## Situação 5 — Próximo, porém fora de área\n" +
+            "• A última atividade foi um check-in.\n" +
+            "• O usuário não está em nenhuma área cadastrada, mas também não está a mais de 2 km de alguma coordenada cadastrada (fora a Zona de CheckOut). Ou seja, está próximo do trabalho.\n" +
+            "• Nenhuma ação: o app apenas exibe 'Localização não Cadastrada'.\n" +
+            "\n" +
+            "## Situação 6 — Botão 'Atualizar' após check-in\n" +
+            "• O app já está em primeiro plano; a última atividade foi um check-in.\n" +
+            "• O usuário toca em 'Atualizar' para atualizar a localização.\n" +
+            "• O app realiza um novo check-in INDEPENDENTEMENTE de a localização ter mudado, para registrar/atualizar a localização e o horário.\n" +
+            "\n" +
+            "## Situação 7 — Saída da Zona de CheckOut\n" +
+            "• Em primeiro plano; a última atividade foi um check-out; o usuário está na 'Zona de CheckOut' (nenhuma ação).\n" +
+            "• O usuário toca em 'Atualizar' e o app percebe que ele saiu da Zona de CheckOut, para:\n" +
+            "• Variante 7A — uma área cadastrada diferente da 'Zona de CheckOut';\n" +
+            "• Variante 7B — nenhuma área cadastrada, mas ainda próximo (menos de 2 km, fora a Zona de CheckOut).\n" +
+            "• Em ambas, o app realiza imediatamente um check-in, atualizando a localização para a área cadastrada ou, sem correspondência exata, para 'Localização não Cadastrada'.\n" +
+            "\n" +
+            "## Situação 8 — Zona Mista\n" +
+            "• O app identifica que a posição corresponde à 'Zona Mista' (na primeira entrada ou em leitura consecutiva).\n" +
+            "• Se a última atividade relevante NÃO foi na própria 'Zona Mista', a alternância é imediata: 8A — após check-in → check-out na 'Zona Mista'; 8B — após check-out → check-in na 'Zona Mista'.\n" +
+            "• O campo 'Intervalo de Tempo para Zona Mista' (aba 'Cadastro' do website) é o cooldown só para leituras consecutivas na própria Zona Mista: enquanto tempo_decorrido < intervalo, bloqueia nova alternância; quando >= intervalo, volta a permitir.\n" +
+            "• Exceção após check-in na Zona Mista: ir para a 'Zona de CheckOut' ou além da 'Distância mínima para check-out automático' → check-out imediato, sem aguardar o cooldown.\n" +
+            "• Exceção após check-out na Zona Mista: ir para outra área cadastrada (exceto Zona de CheckOut e Zona Mista) ou continuar dentro da distância mínima → check-in imediato, descartando o cooldown.\n" +
+            "\n" +
+            "## Situação 9 — Modo manual (Atividades Automáticas desligadas)\n" +
+            "• O usuário está autenticado; as Atividades Automáticas estão DESABILITADAS.\n" +
+            "• O app atualiza a localização se houver permissão; senão, exibe 'Permissão negada'.\n" +
+            "• O usuário escolhe 'check-in' ou 'check-out', 'Normal' ou 'Retroativo', seleciona o 'Local' (disponível sempre que as Atividades Automáticas estão desligadas) e toca em 'Registrar'.\n" +
+            "• O app segue o fluxo normal e realiza a atividade conforme as seleções.",
+        "rulesNativeTitle" to "Situações — Aplicativo Nativo (Android)",
+        "rulesNativeBody" to "## Situação 1 — Check-out por afastamento\n" +
+            "• A última atividade foi um check-in.\n" +
+            "• O usuário está na 'Zona de CheckOut' ou a mais de 2 km de qualquer local cadastrado (exceto a Zona de CheckOut).\n" +
+            "• O app realiza o check-out.\n" +
+            "\n" +
+            "## Situação 2 — Já em check-out, longe ou na Zona de CheckOut\n" +
+            "• A última atividade foi um check-out.\n" +
+            "• O usuário está na 'Zona de CheckOut' ou a mais de 2 km de qualquer local cadastrado.\n" +
+            "• Nenhuma ação: o check-out não se repete por mudança de localização.\n" +
+            "\n" +
+            "## Situação 3 — Chegada ao trabalho (check-in)\n" +
+            "• A última atividade foi um check-out.\n" +
+            "• O usuário está DENTRO de uma área cadastrada diferente da 'Zona de CheckOut' (correspondência efetiva, não apenas proximidade).\n" +
+            "• O app realiza o check-in e atualiza a localização para a área correspondente.\n" +
+            "! IMPORTANTE: partindo de um CHECK-OUT, se o usuário NÃO estiver dentro de nenhuma área cadastrada — ainda que próximo —, o app NÃO faz check-in; apenas exibe 'Localização não Cadastrada' (ver Variante 7B). Quando a última atividade foi um CHECK-IN e o usuário fica próximo, porém fora de área, o comportamento é diferente: o app faz um check-in com 'Localização não Cadastrada' como mudança (ver Situação 5).\n" +
+            "\n" +
+            "## Situação 4 — Novo check-in apenas por mudança de local\n" +
+            "• A última atividade foi um check-in.\n" +
+            "• O usuário está em uma área cadastrada diferente da 'Zona de CheckOut'.\n" +
+            "• O app realiza um novo check-in APENAS se a área for DIFERENTE da do último check-in.\n" +
+            "• No MESMO local do último check-in, NENHUMA ação (isto elimina o check-in duplicado). Ao mudar de área, o novo check-in registra/atualiza a localização e o horário.\n" +
+            "\n" +
+            "## Situação 5 — Próximo, porém fora de área (continuação)\n" +
+            "• A última atividade foi um check-in.\n" +
+            "• O usuário não está em nenhuma área cadastrada, mas está próximo (menos de 2 km de alguma coordenada, fora a Zona de CheckOut).\n" +
+            "• Como saiu da área, o app faz um check-in com 'Localização não Cadastrada', registrando a continuidade do deslocamento.\n" +
+            "• Só ocorre como MUDANÇA: se o último check-in já foi 'Localização não Cadastrada', NENHUMA ação (não se repete).\n" +
+            "\n" +
+            "## Situação 6 — Botão 'Atualizar' após check-in\n" +
+            "• Em primeiro plano; a última atividade foi um check-in.\n" +
+            "• O usuário toca em 'Atualizar'.\n" +
+            "• Novo check-in APENAS se a localização for DIFERENTE da do último check-in (mesma regra da Situação 4). No MESMO local, NENHUMA ação.\n" +
+            "\n" +
+            "## Situação 7 — Saída da Zona de CheckOut\n" +
+            "• Em primeiro plano; a última atividade foi um check-out; o usuário está na 'Zona de CheckOut' (nenhuma ação).\n" +
+            "• O usuário toca em 'Atualizar' e o app atualiza a localização para: Variante 7A — uma área cadastrada diferente da 'Zona de CheckOut'; Variante 7B — nenhuma área cadastrada, mas ainda próximo (menos de 2 km, fora a Zona de CheckOut).\n" +
+            "• 7A: como a última atividade foi check-out, o app faz o check-in imediatamente na área correspondente.\n" +
+            "• 7B: como o usuário está em check-out e NÃO está dentro de nenhuma área, o app NÃO faz check-in; apenas exibe 'Localização não Cadastrada' (mesma regra da nota da Situação 3).\n" +
+            "\n" +
+            "## Situação 8 — Zona Mista\n" +
+            "• O app identifica a 'Zona Mista' e, se a última atividade relevante não foi nela, alterna imediatamente: 8A — após check-in → check-out na 'Zona Mista'; 8B — após check-out → check-in na 'Zona Mista'.\n" +
+            "• O 'Intervalo de Tempo para Zona Mista' é o cooldown só para leituras consecutivas na própria Zona Mista: enquanto tempo_decorrido < intervalo, bloqueia nova alternância; quando >= intervalo, volta a permitir.\n" +
+            "• Exceções imediatas (descartando o cooldown): ir para a 'Zona de CheckOut' ou além da distância mínima → check-out; ir para outra área cadastrada ou continuar dentro da distância mínima → check-in.\n" +
+            "\n" +
+            "## Situação 9 — Modo manual (Atividades Automáticas desligadas)\n" +
+            "• Usuário autenticado; Atividades Automáticas DESABILITADAS.\n" +
+            "• O app atualiza a localização se houver permissão; senão, exibe 'Permissão negada'.\n" +
+            "• O usuário escolhe check-in/check-out, Normal/Retroativo, seleciona o 'Local' e toca em 'Registrar'.\n" +
+            "• O app segue o fluxo normal conforme as seleções.",
+        "notesTitle" to "Observações gerais",
+        "notesBody" to "## Gatilho de primeiro plano\n" +
+            "• Abrir o app ou trazê-lo para primeiro plano, com Atividades Automáticas habilitadas e usuário autenticado, dispara a avaliação automática (o motor decide check-in ou check-out conforme as situações). O mesmo vale para o geofencing e para a verificação periódica a cada 15 minutos.\n" +
+            "• Não há check-in periódico 'às cegas': a verificação de 15 em 15 minutos sempre confere a localização e mantém o 'pular se nada mudou'.\n" +
+            "\n" +
+            "## Check-in só por mudança de localização\n" +
+            "• O check-in automático só ocorre quando a localização resolvida é DIFERENTE da do último check-in. Mesma localização → nenhuma ação. Essa regra (Situações 4 e 6) é o que ELIMINA o check-in duplicado.\n" +
+            "\n" +
+            "## FORMS por projeto\n" +
+            "• No primeiro check-in do dia e em cada check-out, o formulário é preenchido e enviado UMA VEZ POR PROJETO em que o usuário está cadastrado (respeitando o 'forms habilitado' de cada projeto). Ex.: usuário nos projetos P80 e P83 → duas submissões. Usuário de projeto único → uma submissão.\n" +
+            "\n" +
+            "## Invariantes de check-out (preservadas)\n" +
+            "• O check-out automático ocorre em todos os casos descritos (Zona de CheckOut, distância além do limite, alternância da Zona Mista); nunca há dois check-outs consecutivos; após um check-out, a próxima atividade automática é sempre um check-in.",
     ),
 )

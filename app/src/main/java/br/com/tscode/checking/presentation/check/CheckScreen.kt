@@ -62,7 +62,9 @@ import br.com.tscode.checking.presentation.theme.ProvideAccidentTheme
 import br.com.tscode.checking.presentation.transport.TransportScreen
 import br.com.tscode.checking.presentation.transport.TransportViewModel
 import br.com.tscode.checking.presentation.components.AuthRow
+import br.com.tscode.checking.presentation.components.AutoActivitiesNudgeCard
 import br.com.tscode.checking.presentation.components.CheckCard
+import br.com.tscode.checking.presentation.components.CheckHistoryDialog
 import br.com.tscode.checking.presentation.components.HistoryCard
 import br.com.tscode.checking.presentation.components.InformeFieldset
 import br.com.tscode.checking.presentation.components.LocationCard
@@ -77,7 +79,6 @@ import br.com.tscode.checking.presentation.components.SettingsDialog
 import br.com.tscode.checking.presentation.settings.autoactivities.AutoActivitiesDialog
 import br.com.tscode.checking.platform.background.AccidentWatchWorker
 import br.com.tscode.checking.platform.background.offline.SyncPendingChecksWorker
-import br.com.tscode.checking.presentation.settings.permissions.PermissionsDialog
 import br.com.tscode.checking.presentation.settings.notifications.NotificationsDialog
 import br.com.tscode.checking.presentation.settings.diagnostics.EvaluationLogDialog
 import br.com.tscode.checking.presentation.settings.scheduledpause.ScheduledPauseDialog
@@ -90,6 +91,8 @@ import br.com.tscode.checking.presentation.theme.Tokens
 @Composable
 fun CheckScreen(
     onNavigateToManual: () -> Unit = {},
+    onNavigateToInstructions: () -> Unit = {},
+    onNavigateToAbout: () -> Unit = {},
     vm: CheckViewModel = hiltViewModel(),
     transportVm: TransportViewModel = hiltViewModel(),
     accidentVm: AccidentViewModel = hiltViewModel(),
@@ -232,6 +235,8 @@ fun CheckScreen(
                             historyState = state.historyState,
                             t = t,
                             langCode = langCode,
+                            onCheckinClick = vm::openCheckinHistory,
+                            onCheckoutClick = vm::openCheckoutHistory,
                         )
 
                         // Accident inquiry card (authenticated + active accident)
@@ -310,11 +315,23 @@ fun CheckScreen(
                                 onSettingsClick = vm::openSettings,
                                 onRequestRegistrationClick = vm::openSelfRegistrationDialog,
                                 t = t,
+                                autoActivitiesGlow = state.autoActivitiesHealth.toGlow(),
                             )
                         }
 
                         // Authenticated-only sections
                         if (state.isAuthenticated) {
+                            // P5.2 — one-time first-login nudge to enable automatic activities.
+                            // Transient: contributes zero height when hidden (the surrounding Column's
+                            // spacedBy only spaces children that are actually emitted).
+                            if (state.showAutoActivitiesNudge) {
+                                AutoActivitiesNudgeCard(
+                                    onActivate = { vm.openAutoActivitiesDialog() }, // nudge hides via state
+                                    onDismiss = vm::dismissAutoActivitiesNudge,
+                                    t = t,
+                                )
+                            }
+
                             RegistrationFieldset(
                                 selectedAction = state.selectedAction,
                                 onActionSelected = vm::onActionSelected,
@@ -395,10 +412,6 @@ fun CheckScreen(
                     vm.dismissDialog()
                     vm.openScheduledPauseDialog()
                 },
-                onPermissionsClick = {
-                    vm.dismissDialog()
-                    vm.openPermissionsDialog()
-                },
                 onNotificationsClick = {
                     vm.dismissDialog()
                     vm.openNotificationsDialog()
@@ -417,10 +430,19 @@ fun CheckScreen(
                 },
                 onAboutClick = {
                     vm.dismissDialog()
+                    onNavigateToAbout()
+                },
+                onInstructionsClick = {
+                    vm.dismissDialog()
+                    onNavigateToInstructions()
+                },
+                onManualClick = {
+                    vm.dismissDialog()
                     onNavigateToManual()
                 },
                 onDismiss = vm::dismissDialog,
                 t = t,
+                autoActivitiesHealth = state.autoActivitiesHealth,
             )
 
             CheckDialog.PasswordChange -> PasswordChangeDialog(
@@ -469,11 +491,6 @@ fun CheckScreen(
                 t = t,
             )
 
-            CheckDialog.Permissions -> PermissionsDialog(
-                onDismiss = vm::dismissDialog,
-                t = t,
-            )
-
             CheckDialog.Notifications -> NotificationsDialog(
                 notifyActivities = state.notifyActivities,
                 notifyScheduledPause = state.notifyScheduledPause,
@@ -486,6 +503,15 @@ fun CheckScreen(
             )
 
             CheckDialog.EvaluationLog -> EvaluationLogDialog(onDismiss = vm::dismissDialog)
+
+            CheckDialog.History -> CheckHistoryDialog(
+                action = state.historyDialogAction ?: CheckAction.CHECKIN,
+                entries = state.historyDialogEntries,
+                isLoading = state.isHistoryDialogLoading,
+                langCode = langCode,
+                onDismiss = vm::dismissDialog,
+                t = t,
+            )
 
             null -> Unit
         }

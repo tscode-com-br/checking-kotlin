@@ -6,7 +6,7 @@ import android.app.Service
 import android.content.Intent
 import android.os.IBinder
 import br.com.tscode.checking.data.local.AppPreferencesDataSource
-import br.com.tscode.checking.i18n.DEFAULT_LANGUAGE
+import br.com.tscode.checking.i18n.resolveEffectiveLanguageCode
 import br.com.tscode.checking.platform.background.notifications.AutoActivityNotifications
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
@@ -43,14 +43,15 @@ class AutoActivityForegroundService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
-        // startForeground() must be called quickly — use PT fallback, then update once
-        // the persisted language is read from DataStore.
+        // startForeground() must be called quickly — use a device-locale guess (no DataStore read),
+        // then refine once the persisted language is read. Both follow the same stored→device→pt rule
+        // the UI uses, so the service notification matches the user's language instead of forcing pt.
         startForeground(
             AutoActivityNotifications.NOTIFICATION_ID_SERVICE,
-            AutoActivityNotifications.buildServiceNotification(this, isPaused = false, lang = DEFAULT_LANGUAGE),
+            AutoActivityNotifications.buildServiceNotification(this, isPaused = false, lang = resolveEffectiveLanguageCode(null)),
         )
         scope.launch {
-            val lang = appPrefs.language.first().ifEmpty { DEFAULT_LANGUAGE }
+            val lang = resolveEffectiveLanguageCode(appPrefs.language.first())
             updateNotification(isPaused = false, lang = lang)
             val chave = appPrefs.chave.first().ifEmpty { return@launch }
             geofenceManager.register(chave)

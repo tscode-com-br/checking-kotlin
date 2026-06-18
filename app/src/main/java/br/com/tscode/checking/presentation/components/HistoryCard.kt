@@ -3,6 +3,7 @@ package br.com.tscode.checking.presentation.components
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -49,6 +50,10 @@ fun HistoryCard(
     t: (String, Map<String, String>?) -> String,
     langCode: String,
     modifier: Modifier = Modifier,
+    // P2.2 — tapping a cell opens the full history dialog (change D). Default no-op preserves the
+    // pre-change look/behavior for any caller that doesn't wire them.
+    onCheckinClick: () -> Unit = {},
+    onCheckoutClick: () -> Unit = {},
 ) {
     val checkinAt = historyState?.lastCheckinAt
     val checkoutAt = historyState?.lastCheckoutAt
@@ -71,6 +76,7 @@ fun HistoryCard(
                 isLatest = latest == Latest.Checkin,
                 langCode = langCode,
                 t = t,
+                onClick = onCheckinClick,
                 modifier = Modifier.weight(1f),
             )
             HistoryCell(
@@ -79,6 +85,7 @@ fun HistoryCard(
                 isLatest = latest == Latest.Checkout,
                 langCode = langCode,
                 t = t,
+                onClick = onCheckoutClick,
                 modifier = Modifier.weight(1f),
             )
         }
@@ -93,6 +100,7 @@ private fun HistoryCell(
     langCode: String,
     t: (String, Map<String, String>?) -> String,
     modifier: Modifier = Modifier,
+    onClick: () -> Unit = {},
 ) {
     val shape = RoundedCornerShape(Tokens.controlRadius)
     val highlight = if (isLatest) {
@@ -106,7 +114,9 @@ private fun HistoryCell(
 
     Column(
         modifier = modifier
+            .clip(shape)
             .then(highlight)
+            .clickable(onClick = onClick)
             .padding(horizontal = 6.dp, vertical = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(4.dp),

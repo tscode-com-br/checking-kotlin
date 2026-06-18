@@ -140,7 +140,13 @@ fun shouldAttemptAutomaticLocationEvent(
 
     if (lastRecordedAction != CheckAction.CHECKIN) return true
 
-    return normalizeLocationName(resolvedLocal).isNotEmpty()
+    // Change A (P6.1): a re-check-in at a MATCHED area fires ONLY when the resolved location differs
+    // from the last recorded check-in location — suppress same-location re-check-in (the root-cause fix
+    // for the duplicate check-in). Mirrors the mixed-zone "different location" check above. The
+    // last-was-check-out case and the checkout-zone/mixed-zone branches are untouched.
+    val lastCheckInLocation = resolveRecordedCheckInLocation(remoteState)
+    return normalizeLocationName(resolvedLocal).isNotEmpty() &&
+        normalizeLocationName(resolvedLocal) != normalizeLocationName(lastCheckInLocation)
 }
 
 // Situation 1 (out-of-range variant) + Situation 2: fires checkout when outside_workplace.
@@ -186,10 +192,14 @@ data class AutomaticActivity(
 // replay (SyncPendingChecksWorker, P8). Mirrors the web app's three branches
 // (sistema/app/static/check/automatic-activities.js):
 //   - OUTSIDE_WORKPLACE → check-out only if the last action was a check-in (Situations 1-far, 2).
-//   - MATCHED           → check-in/out/toggle per the matched area (Situations 1-CheckOut,3,4,6,7,8).
-//   - everything else (NOT_IN_KNOWN_LOCATION / NO_KNOWN_LOCATIONS / ACCURACY_TOO_LOW) → no action
-//     (covers Situation 5 and the "near but outside" sub-case of 3/7B). It never checks in here, so
-//     it never submits "Localização não Cadastrada" (which /api/web/check rejects with HTTP 422).
+//   - MATCHED           → check-in/out/toggle per the matched area (Situations 1-CheckOut,3,4,6,7,8);
+//     a re-check-in fires only on a location CHANGE (change A / P6.1).
+//   - NOT_IN_KNOWN_LOCATION → "near but not inside any registered area". If the user is currently
+//     checked IN at a registered area, record a check-in at "Localização não Cadastrada" as a CHANGE
+//     (change A continuation / P6.2) — skipped if the last check-in was already that, and never for a
+//     checked-out user. This requires the app's Phase-5 backend relaxation (X-Client: checking-android),
+//     since /api/web/check still rejects this local (HTTP 422) for the web app and any check-out.
+//   - NO_KNOWN_LOCATIONS / ACCURACY_TOO_LOW → no action (covers Situation 5 and low-accuracy).
 fun resolveAutomaticActivityForMatch(
     match: LocationMatch,
     currentState: HistoryState?,
@@ -209,6 +219,19 @@ fun resolveAutomaticActivityForMatch(
         if (!shouldAttemptAutomaticLocationEvent(match, currentState, settings)) return null
         val action = resolveAutomaticLocationAction(match, currentState)
         return AutomaticActivity(action = action, local = match.resolvedLocal)
+    }
+
+    if (match.status == MatchStatus.NOT_IN_KNOWN_LOCATION) {
+        // Change A continuation (P6.2): only as a CHANGE, and only for a currently-checked-in user.
+        val lastCheckInLocation = resolveRecordedCheckInLocation(currentState)
+        return if (resolveLastRecordedAction(currentState) == CheckAction.CHECKIN &&
+            normalizeLocationName(lastCheckInLocation) !=
+            normalizeLocationName(AUTOMATIC_UNREGISTERED_CHECKIN_LOCATION)
+        ) {
+            AutomaticActivity(action = CheckAction.CHECKIN, local = AUTOMATIC_UNREGISTERED_CHECKIN_LOCATION)
+        } else {
+            null
+        }
     }
 
     return null

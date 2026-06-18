@@ -4,8 +4,12 @@ import android.Manifest
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
@@ -19,22 +23,27 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import br.com.tscode.checking.platform.background.permissions.LocationStatus
 import br.com.tscode.checking.platform.background.permissions.OemType
 import br.com.tscode.checking.platform.background.permissions.PermissionLadder
+import br.com.tscode.checking.platform.background.permissions.PermissionsInspector
 import br.com.tscode.checking.presentation.components.DialogScaffold
 import br.com.tscode.checking.presentation.components.PrimaryButton
 import br.com.tscode.checking.presentation.components.SecondaryButton
 import br.com.tscode.checking.presentation.theme.CheckingDivider
 import br.com.tscode.checking.presentation.theme.CheckingError
+import br.com.tscode.checking.presentation.theme.CheckingLatestBorder
 import br.com.tscode.checking.presentation.theme.CheckingPrimary
 import br.com.tscode.checking.presentation.theme.CheckingTextMuted
 import br.com.tscode.checking.presentation.theme.CheckingTextStrong
@@ -85,6 +94,22 @@ fun AutoActivitiesDialog(
     var oemGuidanceShown by rememberSaveable { mutableStateOf(false) }
     // Show the denial notice below "Revisar Permissões" after a failed ladder run
     var showPermissionsNotice by rememberSaveable { mutableStateOf(false) }
+
+    // P4.1 — live permission checklist (additive). refreshKey re-reads the inspector on ON_RESUME and
+    // after a per-row "fix" tap. This status-only observer never touches stepIndex / isWaitingForResume,
+    // so it does NOT fight the ladder's step machine below.
+    var refreshKey by remember { mutableIntStateOf(0) }
+    var checklistOemAck by rememberSaveable { mutableStateOf(false) }
+    val permStatus = remember(refreshKey, checklistOemAck) {
+        PermissionsInspector.inspect(context, checklistOemAck)
+    }
+    DisposableEffect(lifecycleOwner) {
+        val checklistObserver = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) refreshKey++
+        }
+        lifecycleOwner.lifecycle.addObserver(checklistObserver)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(checklistObserver) }
+    }
 
     // ─── Permission launchers ─────────────────────────────────────────────────
 
@@ -230,6 +255,51 @@ fun AutoActivitiesDialog(
             )
         }
 
+        // P4.1 — live permission checklist: tap a row to fix it; status refreshes on return (ON_RESUME).
+        HorizontalDivider(color = CheckingDivider)
+        ChecklistRow(
+            label = t("autoActivities.permNotifications", null),
+            statusText = if (permStatus.notificationsGranted) t("permissions.notificationsAllowed", null)
+            else t("permissions.notificationsDisallowed", null),
+            tone = if (permStatus.notificationsGranted) ToneGood else ToneBad,
+            onFix = { PermissionLadder.launchAppNotificationSettings(context) },
+        )
+        val (locationStatusText, locationTone) = when {
+            permStatus.location == LocationStatus.PRECISE && permStatus.backgroundGranted ->
+                t("permissions.locationPrecise", null) to ToneGood
+            permStatus.location == LocationStatus.PRECISE ->
+                t("permissions.locationPreciseNoBackground", null) to ToneWarn
+            permStatus.location == LocationStatus.IMPRECISE ->
+                t("permissions.locationImprecise", null) to ToneWarn
+            else ->
+                t("permissions.locationDenied", null) to ToneBad
+        }
+        ChecklistRow(
+            label = t("autoActivities.permLocationAllTime", null),
+            statusText = locationStatusText,
+            tone = locationTone,
+            onFix = { PermissionLadder.launchLocationSettings(context) },
+        )
+        ChecklistRow(
+            label = t("autoActivities.permBattery", null),
+            statusText = if (permStatus.batteryRestricted) t("permissions.batteryRestricted", null)
+            else t("permissions.batteryUnrestricted", null),
+            tone = if (permStatus.batteryRestricted) ToneBad else ToneGood,
+            onFix = { PermissionLadder.launchBatteryOptimizationRequest(context) },
+        )
+        if (PermissionLadder.detectOemType() != OemType.GENERIC) {
+            ChecklistRow(
+                label = t("autoActivities.permAutoStart", null),
+                statusText = if (permStatus.autoStartEnabled) t("permissions.autoStartOn", null)
+                else t("permissions.autoStartOff", null),
+                tone = if (permStatus.autoStartEnabled) ToneGood else ToneBad,
+                onFix = {
+                    checklistOemAck = true
+                    PermissionLadder.launchOemAutostartSettings(context)
+                },
+            )
+        }
+
         // Insufficient-permissions notice (BLOCKING) — shown when the user wants the feature on
         // (intent) but the MINIMUM (notifications + precise location) is still missing.
         if (automaticActivitiesEnabled && !permissionsSufficient) {
@@ -308,5 +378,40 @@ fun AutoActivitiesDialog(
                 color = CheckingPrimary,
             )
         }
+    }
+}
+
+// P4.1 tone palette (inherited from the former PermissionsDialog): green / orange / red for the checklist statuses.
+private val ToneGood = CheckingLatestBorder
+private val ToneWarn = Color(0xFFEA580C)
+private val ToneBad = CheckingError
+
+/** A tappable permission row: label + colored status; the whole row launches the relevant fix screen. */
+@Composable
+private fun ChecklistRow(
+    label: String,
+    statusText: String,
+    tone: Color,
+    onFix: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onFix)
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = CheckingTextStrong,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            text = statusText,
+            style = MaterialTheme.typography.bodyMedium,
+            color = tone,
+        )
     }
 }

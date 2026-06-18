@@ -5,8 +5,11 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
@@ -29,6 +32,7 @@ import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.vector.PathParser
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import br.com.tscode.checking.presentation.theme.ArimoFamily
@@ -110,17 +114,22 @@ fun AppSplashScreen(onFinished: () -> Unit) {
             }
         }
 
-        Text(
-            text = "Tamer Salmem",
-            style = MaterialTheme.typography.labelSmall.copy(
-                fontFamily = ArimoFamily,
-                fontSize = 13.75.sp, // labelSmall 11sp + 25%
-                letterSpacing = 1.5.sp,
-            ),
-            color = Color.White,
+        val footerStyle = MaterialTheme.typography.labelSmall.copy(
+            fontFamily = ArimoFamily,
+            fontSize = 13.75.sp, // labelSmall 11sp + 25%
+            letterSpacing = 1.5.sp,
+        )
+        Column(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
+                .fillMaxWidth()
                 .padding(bottom = 28.dp),
-        )
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(text = "Dilnei Schmidt", style = footerStyle, color = Color.White, textAlign = TextAlign.Center)
+            Text(text = "Tamer Salmem", style = footerStyle, color = Color.White, textAlign = TextAlign.Center)
+            Text(text = "Thiago Soares do Nascimento", style = footerStyle, color = Color.White, textAlign = TextAlign.Center)
+        }
     }
 }
