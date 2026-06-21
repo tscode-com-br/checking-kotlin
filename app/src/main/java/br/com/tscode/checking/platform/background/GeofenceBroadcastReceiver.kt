@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import com.google.android.gms.location.Geofence
 import com.google.android.gms.location.GeofencingEvent
+import br.com.tscode.checking.platform.activitylog.ActivityLogger
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -18,6 +19,7 @@ import javax.inject.Inject
 class GeofenceBroadcastReceiver : BroadcastReceiver() {
 
     @Inject lateinit var orchestrator: BackgroundCheckOrchestrator
+    @Inject lateinit var activityLogger: ActivityLogger
 
     override fun onReceive(context: Context, intent: Intent) {
         val event = GeofencingEvent.fromIntent(intent) ?: return
@@ -26,6 +28,12 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
         val transition = event.geofenceTransition
         if (transition != Geofence.GEOFENCE_TRANSITION_ENTER &&
             transition != Geofence.GEOFENCE_TRANSITION_EXIT) return
+
+        // plan004 — geofence crossing woke the engine. Logged best-effort off the application scope (same
+        // fire-and-forget semantics as every ActivityLogger call); location=null since matching is server-side.
+        activityLogger.logLocation(
+            if (transition == Geofence.GEOFENCE_TRANSITION_ENTER) "Entered geofence." else "Exited geofence.",
+        )
 
         // Ensure the FGS is alive so subsequent timer ticks keep running.
         if (!AutoActivityForegroundService.isRunning) {

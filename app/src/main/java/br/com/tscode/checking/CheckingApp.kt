@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.os.Build
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
+import br.com.tscode.checking.platform.activitylog.ActivityLogger
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
 
@@ -17,6 +18,9 @@ class CheckingApp : Application(), Configuration.Provider {
     @Inject
     lateinit var workerFactory: HiltWorkerFactory
 
+    @Inject
+    lateinit var activityLogger: ActivityLogger
+
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder()
             .setWorkerFactory(workerFactory)
@@ -25,6 +29,7 @@ class CheckingApp : Application(), Configuration.Provider {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannels()
+        activityLogger.logSystem("App started.") // plan004 — process start
     }
 
     // Two channels for background automatic activities (§23.9):

@@ -1,5 +1,6 @@
 package br.com.tscode.checking.presentation.check
 
+import br.com.tscode.checking.domain.model.ActivityLogEntry
 import br.com.tscode.checking.domain.model.AuthStatus
 import br.com.tscode.checking.domain.model.CheckAction
 import br.com.tscode.checking.domain.model.CheckHistoryEntry
@@ -9,7 +10,7 @@ import br.com.tscode.checking.domain.model.Project
 import br.com.tscode.checking.domain.model.UserProjects
 import br.com.tscode.checking.presentation.components.FieldGlow
 
-enum class CheckDialog { PasswordChange, SelfRegistration, Settings, AutoActivities, ScheduledPause, Notifications, EvaluationLog, History }
+enum class CheckDialog { PasswordChange, SelfRegistration, Settings, AutoActivities, ScheduledPause, Notifications, EvaluationLog, History, Activities }
 
 enum class NotificationTone { None, Info, Success, Error, Teal }
 
@@ -135,10 +136,18 @@ data class CheckUiState(
     val dialogOpen: CheckDialog? = null,
     val passwordChangeFields: PasswordChangeFields = PasswordChangeFields(),
     val selfRegistrationFields: SelfRegistrationFields = SelfRegistrationFields(),
+
+    // plan004 EP8 — Activities log dialog (read-only; snapshot-at-open; paged in blocks of 30, newest-first).
+    val activityEntries: List<ActivityLogEntry> = emptyList(),
+    val activityNextOffset: Int = 0,
+    val activityCanLoadMore: Boolean = false,
+    val isActivitiesLoading: Boolean = false,
 ) {
     val isAuthenticated: Boolean get() = authStatus?.authenticated == true
     val isFound: Boolean get() = authStatus?.found == true
     val hasPassword: Boolean get() = authStatus?.hasPassword == true
+    // plan003 — self-registration awaiting admin approval (server-derived; drives orange fields + red bar).
+    val isAwaitingApproval: Boolean get() = authStatus?.pendingApproval == true
 
     // Situation 9 guard: manual location required when accuracy too low
     val isAccuracyTooLow: Boolean

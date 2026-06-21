@@ -63,6 +63,7 @@ class AccidentNotificationDecisionTest {
         authRepository = mockk(relaxed = true),
         securePasswordStore = mockk(relaxed = true),
         accidentRepository = accidentRepo,
+        activityLogger = mockk(relaxed = true),
     )
 
     private fun successState(vararg ids: Int) = AppResult.Success(

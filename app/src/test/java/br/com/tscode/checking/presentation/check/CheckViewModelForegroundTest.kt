@@ -65,6 +65,7 @@ class CheckViewModelForegroundTest {
     private fun buildViewModel() = CheckViewModel(
         appPreferences, securePasswordStore, authRepository, projectRepository, checkRepository,
         captureLocationUseCase, orchestrator, offlineCheckQueue, clock, appContext,
+        mockk(relaxed = true), mockk(relaxed = true),
     )
 
     @Test

@@ -7,10 +7,13 @@ import br.com.tscode.checking.core.error.ApiError
 import br.com.tscode.checking.core.result.AppResult
 import br.com.tscode.checking.data.local.AppPreferencesDataSource
 import br.com.tscode.checking.data.local.SecurePasswordStore
+import br.com.tscode.checking.data.local.activitylog.ActivityLog
 import br.com.tscode.checking.domain.clientstate.autofillPetrobrasEmailDomain
 import br.com.tscode.checking.domain.clientstate.isPasswordLengthValid
 import br.com.tscode.checking.domain.clientstate.isPasswordVerificationInputValid
 import br.com.tscode.checking.domain.clientstate.sanitizeSettingsChave
+import br.com.tscode.checking.domain.model.ActivityActor
+import br.com.tscode.checking.domain.model.ActivityKind
 import br.com.tscode.checking.domain.model.CheckAction
 import br.com.tscode.checking.domain.model.InformeType
 import br.com.tscode.checking.domain.model.MatchStatus
@@ -22,6 +25,7 @@ import br.com.tscode.checking.domain.clientstate.resolvePersistedUserSettings
 import br.com.tscode.checking.domain.clientstate.withPersistedUserSettings
 import br.com.tscode.checking.domain.usecase.CaptureLocationUseCase
 import br.com.tscode.checking.domain.usecase.LocationCaptureResult
+import br.com.tscode.checking.platform.activitylog.ActivityLogger
 import br.com.tscode.checking.platform.background.AutoActivityController
 import br.com.tscode.checking.platform.background.BackgroundCheckOrchestrator
 import br.com.tscode.checking.platform.background.OrchestratorTrigger
@@ -65,6 +69,8 @@ class CheckViewModel @Inject constructor(
     // Application context (not an Activity — safe to hold in a ViewModel). Used to (re)start the
     // background engine from non-UI flows like auth/session restore (P4).
     @ApplicationContext private val appContext: Context,
+    private val activityLogger: ActivityLogger,
+    private val activityLog: ActivityLog,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(CheckUiState())
@@ -77,6 +83,8 @@ class CheckViewModel @Inject constructor(
 
     private var passwordVerifyJob: Job? = null
     private var checkSseJob: Job? = null
+    // plan003 — polls /auth/status while a self-registration is awaiting admin approval.
+    private var pendingApprovalPollJob: Job? = null
 
     init {
         viewModelScope.launch {
@@ -131,6 +139,7 @@ class CheckViewModel @Inject constructor(
     fun onChaveChanged(rawValue: String) {
         val sanitized = sanitizeSettingsChave(rawValue)
         passwordVerifyJob?.cancel()
+        stopPendingApprovalPolling()
         stopCheckStream()
 
         _uiState.update {
@@ -195,11 +204,24 @@ class CheckViewModel @Inject constructor(
                         prompt = resolvePrompt(status),
                     )
                 }
-                maybeAutoOpenAssistanceDialog(status)
-                // Auto-login if we have a stored password
-                val storedPw = _uiState.value.password
-                if (status.hasPassword && storedPw.isNotEmpty()) {
-                    attemptLogin(chave, storedPw)
+                if (status.pendingApproval) {
+                    // plan003 — awaiting admin approval: red bar; do NOT auto-open the registration form.
+                    _uiState.update {
+                        it.copy(
+                            notificationPrimary = t("auth.awaitingApproval", lang = _languageFlow.value),
+                            notificationSecondary = "",
+                            notificationTone = NotificationTone.Error,
+                        )
+                    }
+                    startPendingApprovalPolling(chave)
+                } else {
+                    stopPendingApprovalPolling()
+                    maybeAutoOpenAssistanceDialog(status)
+                    // Auto-login if we have a stored password (also fires when approval flips found→true).
+                    val storedPw = _uiState.value.password
+                    if (status.hasPassword && storedPw.isNotEmpty()) {
+                        attemptLogin(chave, storedPw)
+                    }
                 }
             }
             is AppResult.Failure -> {
@@ -208,6 +230,25 @@ class CheckViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    // plan003 — light polling while awaiting approval. Each tick re-probes; probeStatus keeps this alive
+    // (still pending) or lets it exit: approved (found→true) → auto-login → engine; rejected → silent
+    // return to the unknown-key state.
+    private fun startPendingApprovalPolling(chave: String) {
+        if (pendingApprovalPollJob?.isActive == true) return
+        pendingApprovalPollJob = viewModelScope.launch {
+            while (_uiState.value.isAwaitingApproval && _uiState.value.chave == chave) {
+                delay(20_000L) // ~20s between approval re-checks
+                if (_uiState.value.chave != chave || !_uiState.value.isAwaitingApproval) break
+                probeStatus(chave)
+            }
+        }
+    }
+
+    private fun stopPendingApprovalPolling() {
+        pendingApprovalPollJob?.cancel()
+        pendingApprovalPollJob = null
     }
 
     private fun resolvePrompt(status: br.com.tscode.checking.domain.model.AuthStatus): String {
@@ -221,6 +262,8 @@ class CheckViewModel @Inject constructor(
 
     private fun maybeAutoOpenAssistanceDialog(status: br.com.tscode.checking.domain.model.AuthStatus) {
         val state = _uiState.value
+        // plan003 — a pending registration is NOT an unknown user: never re-open the registration form.
+        if (status.pendingApproval) return
         if (state.dismissedAssistanceForChave == status.chave) return
         when {
             status.found && !status.hasPassword && !status.authenticated ->
@@ -255,6 +298,7 @@ class CheckViewModel @Inject constructor(
                 if (status.authenticated) {
                     securePasswordStore.setPassword(chave, password)
                     onAuthenticationSucceeded(chave, status)
+                    activityLogger.logAuth("Signed in.") // plan004
                 } else {
                     _uiState.update {
                         it.copy(
@@ -262,6 +306,7 @@ class CheckViewModel @Inject constructor(
                             notificationTone = NotificationTone.Error,
                         )
                     }
+                    activityLogger.logError("Sign-in failed.") // plan004
                 }
             }
             is AppResult.Failure -> {
@@ -282,6 +327,7 @@ class CheckViewModel @Inject constructor(
                             )
                         }
                 }
+                activityLogger.logError("Sign-in failed.") // plan004
             }
         }
     }
@@ -386,6 +432,13 @@ class CheckViewModel @Inject constructor(
     // Called from the screen on ON_RESUME — re-syncs state after the app returns to the
     // foreground (covers changes missed while backgrounded / SSE disconnected).
     fun onForegroundResume() {
+        // plan003 — while awaiting approval, re-check status on foreground (catches an approval made
+        // while backgrounded; approval → auto-login → engine via probeStatus).
+        if (_uiState.value.isAwaitingApproval) {
+            val chave = _uiState.value.chave
+            if (chave.length == 4) viewModelScope.launch { probeStatus(chave) }
+            return
+        }
         if (_uiState.value.isAuthenticated) {
             refreshCheckState()
             // Change C (P3.1): with auto-activities ON, foregrounding runs the engine, which decides
@@ -494,7 +547,10 @@ class CheckViewModel @Inject constructor(
             )
         }
         if (!fineGranted) {
-            if (wasEnabled) onAutomaticActivitiesToggled(false, context)
+            if (wasEnabled) {
+                onAutomaticActivitiesToggled(false, context)
+                activityLogger.logWarning("Location permission revoked — auto disabled.") // plan004
+            }
             _uiState.update { it.copy(locationMatch = null, isLocationLoading = false) }
             return
         }
@@ -638,7 +694,6 @@ class CheckViewModel @Inject constructor(
     fun openCheckoutHistory() = openCheckHistoryDialog(CheckAction.CHECKOUT)
 
     private fun openCheckHistoryDialog(action: CheckAction) {
-        val chave = _uiState.value.chave
         _uiState.update {
             it.copy(
                 dialogOpen = CheckDialog.History,
@@ -648,6 +703,25 @@ class CheckViewModel @Inject constructor(
                 historyDialogError = false,
             )
         }
+        loadHistoryDialog(action)
+    }
+
+    // plan004 EP2 — re-load the current action after a failure (the dialog's "retry"), without
+    // re-opening it. Distinct error state means a load failure is never silently shown as "empty".
+    fun retryHistoryDialog() {
+        val action = _uiState.value.historyDialogAction ?: return
+        _uiState.update {
+            it.copy(
+                historyDialogEntries = emptyList(),
+                isHistoryDialogLoading = true,
+                historyDialogError = false,
+            )
+        }
+        loadHistoryDialog(action)
+    }
+
+    private fun loadHistoryDialog(action: CheckAction) {
+        val chave = _uiState.value.chave
         viewModelScope.launch {
             when (val r = checkRepository.getHistory(chave)) {
                 is AppResult.Success ->
@@ -859,17 +933,54 @@ class CheckViewModel @Inject constructor(
             )) {
                 is AppResult.Success -> {
                     val status = result.data
+                    // Always keep the typed password locally — needed for the auto-login once approved.
                     securePasswordStore.setPassword(state.chave, fields.password)
-                    _uiState.update {
-                        it.copy(
-                            authStatus = status,
-                            prompt = resolvePrompt(status),
-                            dialogOpen = null,
-                            dismissedAssistanceForChave = state.chave,
-                            selfRegistrationFields = SelfRegistrationFields(chave = state.chave),
-                        )
+                    when {
+                        status.queueFull -> {
+                            // plan003 — pending queue is full: red bar, NOT authenticated, NOT awaiting.
+                            _uiState.update {
+                                it.copy(
+                                    authStatus = status,
+                                    prompt = "",
+                                    dialogOpen = null,
+                                    dismissedAssistanceForChave = state.chave,
+                                    selfRegistrationFields = SelfRegistrationFields(chave = state.chave),
+                                    notificationPrimary = t("auth.registrationQueueFull", lang = lang),
+                                    notificationSecondary = "",
+                                    notificationTone = NotificationTone.Error,
+                                )
+                            }
+                        }
+                        status.pendingApproval -> {
+                            // plan003 — awaiting admin approval: orange fields + red bar; start polling.
+                            _uiState.update {
+                                it.copy(
+                                    authStatus = status,
+                                    prompt = "",
+                                    dialogOpen = null,
+                                    dismissedAssistanceForChave = state.chave,
+                                    selfRegistrationFields = SelfRegistrationFields(chave = state.chave),
+                                    notificationPrimary = t("auth.awaitingApproval", lang = lang),
+                                    notificationSecondary = "",
+                                    notificationTone = NotificationTone.Error,
+                                )
+                            }
+                            startPendingApprovalPolling(state.chave)
+                        }
+                        else -> {
+                            // "registered" (gate off): legacy authenticated path.
+                            _uiState.update {
+                                it.copy(
+                                    authStatus = status,
+                                    prompt = resolvePrompt(status),
+                                    dialogOpen = null,
+                                    dismissedAssistanceForChave = state.chave,
+                                    selfRegistrationFields = SelfRegistrationFields(chave = state.chave),
+                                )
+                            }
+                            if (status.authenticated) onAuthenticationSucceeded(state.chave, status)
+                        }
                     }
-                    if (status.authenticated) onAuthenticationSucceeded(state.chave, status)
                 }
                 is AppResult.Failure -> {
                     _uiState.update {
@@ -981,6 +1092,12 @@ class CheckViewModel @Inject constructor(
                             selectedManualLocation = newState.currentLocal,
                         )
                     }
+                    // plan004 — manual check-in/out succeeded (actor=USER). Side-effect-only log.
+                    if (state.selectedAction == CheckAction.CHECKIN) {
+                        activityLogger.logCheckIn(ActivityActor.USER, local, success = true)
+                    } else {
+                        activityLogger.logCheckOut(ActivityActor.USER, local, success = true)
+                    }
                     // Refresh accurate history state in background (authoritative source
                     // for the transport-enabled flag, which the submit response omits).
                     viewModelScope.launch {
@@ -1000,6 +1117,7 @@ class CheckViewModel @Inject constructor(
                     val err = r.error
                     if (err is ApiError.Unauthorized) {
                         handleAuthExpiry()
+                        activityLogger.logError("Session expired — sign in again.")
                     } else if (err is ApiError.Network) {
                         // Offline / server unreachable → queue for sync on reconnect (P8) with the
                         // SAME id so it lands exactly once. It's saved, not failed — tell the user so.
@@ -1027,6 +1145,12 @@ class CheckViewModel @Inject constructor(
                                 notificationTone = NotificationTone.Success,
                             )
                         }
+                        // plan004 — manual submit queued offline (actor=USER).
+                        activityLogger.logQueuedOffline(
+                            ActivityActor.USER,
+                            if (state.selectedAction == CheckAction.CHECKIN) ActivityKind.CHECK_IN else ActivityKind.CHECK_OUT,
+                            local,
+                        )
                     } else {
                         val msg = (err as? ApiError.Http)?.detail
                             ?.let { KnownApiMessages.localizeApiMessage(it, lang) }
@@ -1037,6 +1161,12 @@ class CheckViewModel @Inject constructor(
                                 notificationPrimary = msg,
                                 notificationTone = NotificationTone.Error,
                             )
+                        }
+                        // plan004 — manual check-in/out failed (non-network; actor=USER).
+                        if (state.selectedAction == CheckAction.CHECKIN) {
+                            activityLogger.logCheckIn(ActivityActor.USER, local, success = false)
+                        } else {
+                            activityLogger.logCheckOut(ActivityActor.USER, local, success = false)
                         }
                     }
                 }
@@ -1117,6 +1247,65 @@ class CheckViewModel @Inject constructor(
         _uiState.update { it.copy(dialogOpen = CheckDialog.EvaluationLog) }
     }
 
+    // plan004 EP8 — Activities log (read-only, snapshot-at-open, paged in blocks of 30, newest-first).
+    // Every store read is runCatching-wrapped so a DB hiccup can never break the dialog (golden rule 2).
+    fun openActivitiesDialog() {
+        _uiState.update {
+            it.copy(
+                dialogOpen = CheckDialog.Activities,
+                activityEntries = emptyList(),
+                activityNextOffset = 0,
+                activityCanLoadMore = false,
+                isActivitiesLoading = true,
+            )
+        }
+        viewModelScope.launch {
+            val page = runCatching { activityLog.page(offset = 0, limit = ActivityLog.PAGE_SIZE) }
+                .getOrElse { emptyList() }
+            _uiState.update {
+                it.copy(
+                    activityEntries = page,
+                    activityNextOffset = page.size,
+                    activityCanLoadMore = page.size == ActivityLog.PAGE_SIZE,
+                    isActivitiesLoading = false,
+                )
+            }
+        }
+    }
+
+    fun loadMoreActivities() {
+        val s = _uiState.value
+        if (s.isActivitiesLoading || !s.activityCanLoadMore) return // guard re-entrancy + end-of-list
+        _uiState.update { it.copy(isActivitiesLoading = true) }
+        viewModelScope.launch {
+            val offset = _uiState.value.activityNextOffset
+            val page = runCatching { activityLog.page(offset = offset, limit = ActivityLog.PAGE_SIZE) }
+                .getOrElse { emptyList() }
+            _uiState.update {
+                it.copy(
+                    activityEntries = it.activityEntries + page,
+                    activityNextOffset = it.activityNextOffset + page.size,
+                    activityCanLoadMore = page.size == ActivityLog.PAGE_SIZE,
+                    isActivitiesLoading = false,
+                )
+            }
+        }
+    }
+
+    fun clearActivities() {
+        viewModelScope.launch {
+            runCatching { activityLog.clear() }
+            _uiState.update {
+                it.copy(
+                    activityEntries = emptyList(),
+                    activityNextOffset = 0,
+                    activityCanLoadMore = false,
+                    isActivitiesLoading = false,
+                )
+            }
+        }
+    }
+
     fun onScheduledPauseSettingChanged(
         enabled: Boolean,
         from: String,
@@ -1180,8 +1369,10 @@ class CheckViewModel @Inject constructor(
             _uiState.update { it.copy(automaticActivitiesEnabled = enabled, autoActivitiesHealth = computeHealth(enabled, context), showAutoActivitiesNudge = if (enabled) false else it.showAutoActivitiesNudge) }
             if (enabled) {
                 ensureEngineRunningIfEligible(context)
+                activityLogger.logSystem("Automatic activities enabled by user.") // plan004
             } else {
                 AutoActivityController.stop(context)
+                activityLogger.logSystem("Automatic activities disabled by user.") // plan004
             }
         }
     }

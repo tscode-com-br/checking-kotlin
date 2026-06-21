@@ -8,7 +8,6 @@ import androidx.navigation.compose.rememberNavController
 import br.com.tscode.checking.i18n.rememberT
 import br.com.tscode.checking.presentation.about.AboutScreen
 import br.com.tscode.checking.presentation.check.CheckScreen
-import br.com.tscode.checking.presentation.instructions.InstructionsScreen
 import br.com.tscode.checking.presentation.manual.ManualScreen
 import br.com.tscode.checking.presentation.manual.ManualViewModel
 import br.com.tscode.checking.presentation.splash.AppSplashScreen
@@ -18,7 +17,6 @@ object Routes {
     const val SPLASH = "splash"
     const val CHECK = "check"
     const val MANUAL = "manual"
-    const val INSTRUCTIONS = "instructions"
     const val ABOUT = "about"
 }
 
@@ -45,7 +43,6 @@ fun CheckingNavHost() {
         composable(Routes.CHECK) {
             CheckScreen(
                 onNavigateToManual = { navController.navigate(Routes.MANUAL) },
-                onNavigateToInstructions = { navController.navigate(Routes.INSTRUCTIONS) },
                 onNavigateToAbout = { navController.navigate(Routes.ABOUT) },
             )
         }
@@ -53,15 +50,6 @@ fun CheckingNavHost() {
             val manualVm: ManualViewModel = hiltViewModel()
             val t = rememberT(manualVm.languageFlow)
             ManualScreen(
-                onBack = { navController.popBackStack() },
-                t = t,
-            )
-        }
-        composable(Routes.INSTRUCTIONS) {
-            // Reuse ManualViewModel: it only exposes the language flow for rememberT.
-            val manualVm: ManualViewModel = hiltViewModel()
-            val t = rememberT(manualVm.languageFlow)
-            InstructionsScreen(
                 onBack = { navController.popBackStack() },
                 t = t,
             )

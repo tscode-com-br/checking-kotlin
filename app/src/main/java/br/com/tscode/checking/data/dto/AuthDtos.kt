@@ -10,6 +10,8 @@ data class WebPasswordStatusResponse(
     @SerialName("has_password") val hasPassword: Boolean,
     val authenticated: Boolean,
     val message: String,
+    // plan003 — true when this chave has a self-registration awaiting admin approval (no User yet).
+    @SerialName("pending_approval") val pendingApproval: Boolean = false,
 )
 
 @Serializable
@@ -56,6 +58,10 @@ data class WebUserSelfRegistrationResponse(
     val authenticated: Boolean,
     @SerialName("has_password") val hasPassword: Boolean,
     val message: String,
-    val projects: List<String>,
-    @SerialName("active_project") val activeProject: String,
+    // plan003 — `status` is the source of truth: "registered" (legacy) / "pending" / "queue_full".
+    val status: String = "registered",
+    @SerialName("pending_approval") val pendingApproval: Boolean = false,
+    @SerialName("queue_full") val queueFull: Boolean = false,
+    val projects: List<String> = emptyList(),
+    @SerialName("active_project") val activeProject: String = "",
 )

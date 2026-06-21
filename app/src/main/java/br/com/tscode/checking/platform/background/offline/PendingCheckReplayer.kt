@@ -3,10 +3,12 @@ package br.com.tscode.checking.platform.background.offline
 import br.com.tscode.checking.core.error.ApiError
 import br.com.tscode.checking.core.result.AppResult
 import br.com.tscode.checking.domain.checkrules.resolveAutomaticActivityForMatch
+import br.com.tscode.checking.domain.model.ActivityKind
 import br.com.tscode.checking.domain.model.CheckAction
 import br.com.tscode.checking.domain.model.InformeType
 import br.com.tscode.checking.domain.offline.PendingCheckEvent
 import br.com.tscode.checking.domain.repository.CheckRepository
+import br.com.tscode.checking.platform.activitylog.ActivityLogger
 import java.time.Instant
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -22,6 +24,7 @@ import javax.inject.Singleton
 class PendingCheckReplayer @Inject constructor(
     private val queue: OfflineCheckQueue,
     private val checkRepository: CheckRepository,
+    private val activityLogger: ActivityLogger,
 ) {
     enum class DrainResult { COMPLETED, RETRY }
 
@@ -33,6 +36,7 @@ class PendingCheckReplayer @Inject constructor(
         while (pass < MAX_PASSES) {
             val pending = queue.peekAll()
             if (pending.isEmpty()) return DrainResult.COMPLETED
+            activityLogger.logSyncing(pending.size) // plan004 — replay drain started
             for (event in pending) {
                 when (replay(event)) {
                     Outcome.DONE, Outcome.DROP -> queue.remove(event.clientEventId)
@@ -52,7 +56,7 @@ class PendingCheckReplayer @Inject constructor(
     private suspend fun replayDecided(e: PendingCheckEvent.Decided): Outcome {
         val action = if (e.action == "checkout") CheckAction.CHECKOUT else CheckAction.CHECKIN
         val informe = if (e.informe == "retroativo") InformeType.RETROATIVO else InformeType.NORMAL
-        return outcomeOf(
+        val outcome = outcomeOf(
             checkRepository.submit(
                 chave = e.chave,
                 projeto = e.projeto,
@@ -63,6 +67,8 @@ class PendingCheckReplayer @Inject constructor(
                 clientEventId = e.clientEventId,
             ),
         )
+        logReplayOutcome(outcome, action, e.local) // plan004
+        return outcome
     }
 
     private suspend fun replayRaw(e: PendingCheckEvent.Raw): Outcome {
@@ -80,7 +86,7 @@ class PendingCheckReplayer @Inject constructor(
         }
         val activity = resolveAutomaticActivityForMatch(match, state, options.mixedZoneIntervalMinutes)
             ?: return Outcome.DONE // no action for this reading — consume it
-        return outcomeOf(
+        val outcome = outcomeOf(
             checkRepository.submit(
                 chave = e.chave,
                 projeto = e.projeto,
@@ -91,6 +97,8 @@ class PendingCheckReplayer @Inject constructor(
                 clientEventId = e.clientEventId,
             ),
         )
+        logReplayOutcome(outcome, activity.action, activity.local) // plan004
+        return outcome
     }
 
     private fun outcomeOf(result: AppResult<*>): Outcome = when (result) {
@@ -107,6 +115,17 @@ class PendingCheckReplayer @Inject constructor(
         ApiError.Network, ApiError.Unauthorized -> Outcome.RETRY
         is ApiError.Http -> if (error.status >= 500) Outcome.RETRY else Outcome.DROP
         else -> Outcome.DROP
+    }
+
+    // plan004 — side-effect-only Activities log for a replayed event's terminal outcome (RETRY keeps it
+    // queued, so nothing is logged then). Crash-proof via the logger; never alters the drain result.
+    private fun logReplayOutcome(outcome: Outcome, action: CheckAction, local: String?) {
+        val kind = if (action == CheckAction.CHECKOUT) ActivityKind.CHECK_OUT else ActivityKind.CHECK_IN
+        when (outcome) {
+            Outcome.DONE -> activityLogger.logSynced(kind, local)
+            Outcome.DROP -> activityLogger.logSyncDropped(kind)
+            Outcome.RETRY -> {}
+        }
     }
 
     companion object {

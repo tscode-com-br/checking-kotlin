@@ -24,6 +24,11 @@ val CheckingWarning = Color(0xFF92400E)
 val CheckingError = Color(0xFFB42318)
 val CheckingErrorVivid = Color(0xFFFF0000)
 
+// ===== Activities log severity text colors (plan004 §3.1 — color only) =====
+// SUCCESS=green / FAILURE=red reuse CheckingSuccess / CheckingErrorVivid; WARNING=orange + INFO=dark blue:
+val CheckingActivityWarning = Color(0xFFEA580C)  // orange-600 — WARNING rows
+val CheckingActivityInfo = Color(0xFF1E40AF)     // blue-800 (dark blue) — INFO rows
+
 val CheckingSurfaceStart = Color(0xFFF7F8FA)
 val CheckingSurfaceEnd = Color(0xFFEEF2F7)
 val CheckingHeaderBg = Color(0xFF0F766E)

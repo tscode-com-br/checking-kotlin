@@ -16,13 +16,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.outlined.Chat
+import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.MenuBook
 import androidx.compose.material.icons.outlined.MyLocation
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Schedule
-import androidx.compose.material.icons.outlined.School
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -65,8 +65,8 @@ fun SettingsDialog(
     onDismiss: () -> Unit,
     t: (String, Map<String, String>?) -> String,
     autoActivitiesHealth: AutoActivitiesHealth = AutoActivitiesHealth.Off,
-    onInstructionsClick: () -> Unit = {},
     onManualClick: () -> Unit = {},
+    onActivitiesClick: () -> Unit = {},
 ) {
     // P3.1 — grouped rows under section headers (replaces the old flat wall of PrimaryButtons).
     // Signature, callbacks, auth-gating and the visible t() keys are unchanged; only the layout differs.
@@ -131,11 +131,6 @@ fun SettingsDialog(
         // ── Group 3: Ajuda ───────────────────────────────────────────────────────
         SettingsGroupHeader(t("settings.groupHelp", null))
         SettingsRow(
-            icon = Icons.Outlined.School,
-            label = t("settings.instructionsLabel", null),
-            onClick = onInstructionsClick,
-        )
-        SettingsRow(
             icon = Icons.Outlined.MenuBook,
             label = t("settings.manualLabel", null),
             onClick = onManualClick,
@@ -149,6 +144,13 @@ fun SettingsDialog(
             icon = Icons.Outlined.Info,
             label = t("settings.aboutLabel", null),
             onClick = onAboutClick,
+        )
+        // plan004 EP8 — read-only Activities debug log. The row label is the ONLY localized string for this
+        // feature; the table the dialog renders is English-only by design.
+        SettingsRow(
+            icon = Icons.Outlined.History,
+            label = t("settings.activitiesLabel", null),
+            onClick = onActivitiesClick,
         )
 
         TextButton(

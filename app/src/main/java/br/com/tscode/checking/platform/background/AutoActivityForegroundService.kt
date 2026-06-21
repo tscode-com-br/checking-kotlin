@@ -7,6 +7,7 @@ import android.content.Intent
 import android.os.IBinder
 import br.com.tscode.checking.data.local.AppPreferencesDataSource
 import br.com.tscode.checking.i18n.resolveEffectiveLanguageCode
+import br.com.tscode.checking.platform.activitylog.ActivityLogger
 import br.com.tscode.checking.platform.background.notifications.AutoActivityNotifications
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
@@ -29,6 +30,7 @@ class AutoActivityForegroundService : Service() {
     @Inject lateinit var appPrefs: AppPreferencesDataSource
     @Inject lateinit var orchestrator: BackgroundCheckOrchestrator
     @Inject lateinit var geofenceManager: GeofenceManager
+    @Inject lateinit var activityLogger: ActivityLogger
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var timerJob: Job? = null
@@ -36,6 +38,7 @@ class AutoActivityForegroundService : Service() {
     override fun onCreate() {
         super.onCreate()
         isRunning = true
+        activityLogger.logActive("Background service started.") // plan004 — engine awake
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -75,6 +78,7 @@ class AutoActivityForegroundService : Service() {
 
     override fun onDestroy() {
         isRunning = false
+        activityLogger.logInactive("Background service stopped.") // plan004 — engine asleep
         scope.cancel()
         super.onDestroy()
     }

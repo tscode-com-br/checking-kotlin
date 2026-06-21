@@ -80,6 +80,7 @@ import br.com.tscode.checking.presentation.settings.autoactivities.AutoActivitie
 import br.com.tscode.checking.platform.background.AccidentWatchWorker
 import br.com.tscode.checking.platform.background.offline.SyncPendingChecksWorker
 import br.com.tscode.checking.presentation.settings.notifications.NotificationsDialog
+import br.com.tscode.checking.presentation.settings.activitylog.ActivityLogDialog
 import br.com.tscode.checking.presentation.settings.diagnostics.EvaluationLogDialog
 import br.com.tscode.checking.presentation.settings.scheduledpause.ScheduledPauseDialog
 import br.com.tscode.checking.presentation.theme.CheckingHeaderBg
@@ -91,7 +92,6 @@ import br.com.tscode.checking.presentation.theme.Tokens
 @Composable
 fun CheckScreen(
     onNavigateToManual: () -> Unit = {},
-    onNavigateToInstructions: () -> Unit = {},
     onNavigateToAbout: () -> Unit = {},
     vm: CheckViewModel = hiltViewModel(),
     transportVm: TransportViewModel = hiltViewModel(),
@@ -315,6 +315,7 @@ fun CheckScreen(
                                 onSettingsClick = vm::openSettings,
                                 onRequestRegistrationClick = vm::openSelfRegistrationDialog,
                                 t = t,
+                                awaitingApproval = state.isAwaitingApproval,
                                 autoActivitiesGlow = state.autoActivitiesHealth.toGlow(),
                             )
                         }
@@ -432,13 +433,13 @@ fun CheckScreen(
                     vm.dismissDialog()
                     onNavigateToAbout()
                 },
-                onInstructionsClick = {
-                    vm.dismissDialog()
-                    onNavigateToInstructions()
-                },
                 onManualClick = {
                     vm.dismissDialog()
                     onNavigateToManual()
+                },
+                onActivitiesClick = {
+                    vm.dismissDialog()
+                    vm.openActivitiesDialog()
                 },
                 onDismiss = vm::dismissDialog,
                 t = t,
@@ -508,9 +509,20 @@ fun CheckScreen(
                 action = state.historyDialogAction ?: CheckAction.CHECKIN,
                 entries = state.historyDialogEntries,
                 isLoading = state.isHistoryDialogLoading,
+                isError = state.historyDialogError,
+                onRetry = { vm.retryHistoryDialog() },
                 langCode = langCode,
                 onDismiss = vm::dismissDialog,
                 t = t,
+            )
+
+            CheckDialog.Activities -> ActivityLogDialog(
+                entries = state.activityEntries,
+                isLoading = state.isActivitiesLoading,
+                canLoadMore = state.activityCanLoadMore,
+                onLoadMore = vm::loadMoreActivities,
+                onClear = vm::clearActivities,
+                onDismiss = vm::dismissDialog,
             )
 
             null -> Unit

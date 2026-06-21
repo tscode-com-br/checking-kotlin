@@ -158,6 +158,10 @@ dependencies {
     // Persistence
     implementation(libs.datastore.preferences)
     implementation(libs.security.crypto)
+    // Room — dedicated, isolated DB for the plan004 Activities log (paged, prunable). KSP processor.
+    implementation(libs.room.runtime)
+    implementation(libs.room.ktx)
+    ksp(libs.room.compiler)
 
     // Background
     implementation(libs.workmanager)

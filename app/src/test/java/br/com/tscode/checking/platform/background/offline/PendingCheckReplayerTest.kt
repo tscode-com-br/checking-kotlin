@@ -2,6 +2,7 @@ package br.com.tscode.checking.platform.background.offline
 
 import br.com.tscode.checking.core.error.ApiError
 import br.com.tscode.checking.core.result.AppResult
+import br.com.tscode.checking.domain.model.ActivityKind
 import br.com.tscode.checking.domain.model.CheckAction
 import br.com.tscode.checking.domain.model.HistoryState
 import br.com.tscode.checking.domain.model.InformeType
@@ -10,9 +11,11 @@ import br.com.tscode.checking.domain.model.LocationOptions
 import br.com.tscode.checking.domain.model.MatchStatus
 import br.com.tscode.checking.domain.offline.PendingCheckEvent
 import br.com.tscode.checking.domain.repository.CheckRepository
+import br.com.tscode.checking.platform.activitylog.ActivityLogger
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -41,7 +44,8 @@ class PendingCheckReplayerTest {
         coEvery { size() } answers { pending.size }
     }
     private val checkRepository = mockk<CheckRepository>()
-    private val replayer = PendingCheckReplayer(queue, checkRepository)
+    private val activityLogger = mockk<ActivityLogger>(relaxed = true)
+    private val replayer = PendingCheckReplayer(queue, checkRepository, activityLogger)
 
     private fun raw(id: String, at: Long) = PendingCheckEvent.Raw(chave, projeto, at, id, 1.3, 103.8, 10.0)
     private fun decided(id: String, at: Long, action: String = "checkout", local: String? = "Zona Mista") =
@@ -152,6 +156,31 @@ class PendingCheckReplayerTest {
             AppResult.Failure(ApiError.Http(422, "bad local"))
         assertEquals(PendingCheckReplayer.DrainResult.COMPLETED, replayer.drain())
         assertTrue(pending.isEmpty())
+    }
+
+    @Test
+    fun drain_logs_syncing_count_and_synced_on_success() = runTest {
+        // plan004 — the drain logs the queued count, then a synced row for the replayed check-out.
+        pending.add(decided("d", at = 1000, action = "checkout", local = "Zona Mista"))
+        coEvery { checkRepository.submit(any(), any(), any(), any(), any(), any(), any()) } returns
+            AppResult.Success(state(CheckAction.CHECKOUT))
+
+        replayer.drain()
+
+        verify { activityLogger.logSyncing(1) }
+        verify { activityLogger.logSynced(ActivityKind.CHECK_OUT, "Zona Mista") }
+    }
+
+    @Test
+    fun drain_logs_dropped_on_permanent_4xx() = runTest {
+        // plan004 — a permanently-dropped queued event (422) is logged as a dropped sync.
+        pending.add(decided("d", at = 1000, action = "checkin", local = "Unidade P80"))
+        coEvery { checkRepository.submit(any(), any(), any(), any(), any(), any(), any()) } returns
+            AppResult.Failure(ApiError.Http(422, "bad local"))
+
+        replayer.drain()
+
+        verify { activityLogger.logSyncDropped(ActivityKind.CHECK_IN) }
     }
 
     @Test

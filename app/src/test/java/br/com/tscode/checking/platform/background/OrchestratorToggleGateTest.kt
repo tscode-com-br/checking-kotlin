@@ -49,6 +49,7 @@ class OrchestratorToggleGateTest {
     private val orchestrator = BackgroundCheckOrchestrator(
         context, appPrefs, checkRepository, useCase, locationProvider, clock,
         authRepository, securePasswordStore, accidentRepository,
+        mockk(relaxed = true),
     )
 
     @Test

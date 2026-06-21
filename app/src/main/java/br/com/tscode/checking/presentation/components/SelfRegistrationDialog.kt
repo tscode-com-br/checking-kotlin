@@ -9,10 +9,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -56,11 +60,25 @@ fun SelfRegistrationDialog(
     )
 
     DialogScaffold(onDismiss = onDismiss) {
-        Text(
-            text = t("registrationDialog.title", null),
-            style = MaterialTheme.typography.titleLarge,
-            color = CheckingTextStrong,
-        )
+        // plan003 (decision 3) — top-left Back arrow returns to the main screen (e.g. if the user typed an
+        // already-registered key by mistake). Reuses onDismiss (which also blocks the dialog auto-reopen).
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = onDismiss, enabled = !fields.isBusy) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = t("settings.backButton", null),
+                    tint = CheckingPrimary,
+                )
+            }
+            Text(
+                text = t("registrationDialog.title", null),
+                style = MaterialTheme.typography.titleLarge,
+                color = CheckingTextStrong,
+            )
+        }
 
         HorizontalDivider(color = CheckingDivider)
 

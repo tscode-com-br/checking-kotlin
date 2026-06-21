@@ -18,7 +18,9 @@ import br.com.tscode.checking.domain.checkrules.nextResumeInstant
 import br.com.tscode.checking.domain.clientstate.resolvePersistedUserSettings
 import br.com.tscode.checking.domain.clientstate.UserSettings
 import br.com.tscode.checking.domain.model.HistoryState
+import br.com.tscode.checking.domain.model.ActivitySeverity
 import br.com.tscode.checking.domain.model.LocationOptions
+import br.com.tscode.checking.platform.activitylog.ActivityLogger
 import br.com.tscode.checking.domain.model.UserProjects
 import br.com.tscode.checking.domain.repository.AccidentRepository
 import br.com.tscode.checking.domain.repository.AuthRepository
@@ -62,6 +64,7 @@ class BackgroundCheckOrchestrator @Inject constructor(
     private val authRepository: AuthRepository,
     private val securePasswordStore: SecurePasswordStore,
     private val accidentRepository: AccidentRepository,
+    private val activityLogger: ActivityLogger,
 ) {
     private val mutex = Mutex()
     private val settingsJson = Json { ignoreUnknownKeys = true; coerceInputValues = true }
@@ -150,6 +153,7 @@ class BackgroundCheckOrchestrator @Inject constructor(
         // 401 during network calls sets isSessionExpired; runOnce() handles the retry.
         val chave = appPrefs.chave.first().ifEmpty { return }
         val lang = resolveEffectiveLanguageCode(appPrefs.language.first())
+        activityLogger.logTrigger(trigger.name) // plan004 — background evaluation fired (verbose-gated)
 
         // Step 2: Toggle + scheduled pause
         val rawJson = appPrefs.userSettingsJson.first()
@@ -164,6 +168,7 @@ class BackgroundCheckOrchestrator @Inject constructor(
 
         if (!userSettings.automaticActivitiesEnabled) {
             EvaluationLog.record(EvaluationEntry(clock.now(), trigger, null, null, null, EvaluationOutcome.TOGGLE_OFF))
+            activityLogger.logSystem("Automatic activities are OFF.", ActivitySeverity.WARNING) // plan004
             return
         }
 
@@ -185,6 +190,7 @@ class BackgroundCheckOrchestrator @Inject constructor(
                     AutoActivityNotifications.postScheduledPauseTransition(context, started = true, lang = lang)
                 }
                 appPrefs.setFlag(FLAG_PAUSE_ACTIVE, true)
+                activityLogger.logInactive("Scheduled pause started.") // plan004 — engine asleep (pause)
             }
             handleScheduledPause(pauseSettings, lang)
             EvaluationLog.record(EvaluationEntry(clock.now(), trigger, null, null, null, EvaluationOutcome.PAUSED))
@@ -196,6 +202,7 @@ class BackgroundCheckOrchestrator @Inject constructor(
                 AutoActivityNotifications.postScheduledPauseTransition(context, started = false, lang = lang)
             }
             appPrefs.setFlag(FLAG_PAUSE_ACTIVE, false)
+            activityLogger.logActive("Scheduled pause ended.") // plan004 — engine awake (pause end)
         }
         // Schedule an exact alarm for the NEXT pause start so it fires precisely, not lazily on
         // the next 15-min tick. (Cancels any stale start alarm when no pause is configured.)
@@ -213,6 +220,7 @@ class BackgroundCheckOrchestrator @Inject constructor(
             }
             if (skipDecision == SkipDecision.SKIP) {
                 EvaluationLog.record(EvaluationEntry(clock.now(), trigger, lastCaptureAccuracyMeters, null, null, EvaluationOutcome.SKIP))
+                activityLogger.logSystem("Auto-check skipped (no movement).") // plan004
                 return
             }
         }
@@ -237,6 +245,12 @@ class BackgroundCheckOrchestrator @Inject constructor(
             cachedState = result.newState
             cacheChave = chave
             cachedStateAt = clock.now()
+        }
+
+        // plan004 — orchestrator-owned outcome. Submitted/NetworkError/NotConfigured are logged by the
+        // use-case; only the "nothing to do" outcome is logged here (once per completed run).
+        if (result is AutoActivitiesResult.NoAction) {
+            activityLogger.logSystem("No action needed (already checked in/out).")
         }
 
         // Diagnostics: record the outcome for every completed run.
@@ -415,12 +429,17 @@ class BackgroundCheckOrchestrator @Inject constructor(
         val password = securePasswordStore.getPassword(chave)
         if (password.isEmpty()) {
             postReauthNotificationCoalesced(lang)
+            activityLogger.logError("Re-authentication required.") // plan004
             return false
         }
         return when (authRepository.login(chave, password)) {
-            is AppResult.Success -> true
+            is AppResult.Success -> {
+                activityLogger.logAuth("Session refreshed.") // plan004
+                true
+            }
             is AppResult.Failure -> {
                 postReauthNotificationCoalesced(lang)
+                activityLogger.logError("Re-authentication required.") // plan004
                 false
             }
         }

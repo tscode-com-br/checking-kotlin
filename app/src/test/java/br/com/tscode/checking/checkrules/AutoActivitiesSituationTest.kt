@@ -49,7 +49,7 @@ class AutoActivitiesSituationTest {
     private val offlineCheckQueue = mockk<OfflineCheckQueue>(relaxed = true)
     private val clock = mockk<Clock> { every { now() } returns Instant.parse("2026-06-16T12:00:00Z") }
 
-    private val useCase = RunAutomaticActivitiesUseCase(captureLocationUseCase, checkRepository, offlineCheckQueue, clock)
+    private val useCase = RunAutomaticActivitiesUseCase(captureLocationUseCase, checkRepository, offlineCheckQueue, clock, mockk(relaxed = true))
 
     private fun match(
         status: MatchStatus,

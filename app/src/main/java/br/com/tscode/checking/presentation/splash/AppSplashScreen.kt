@@ -35,6 +35,7 @@ import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import br.com.tscode.checking.BuildConfig
 import br.com.tscode.checking.presentation.theme.ArimoFamily
 import br.com.tscode.checking.presentation.theme.CheckingHeaderBg
 import kotlinx.coroutines.delay
@@ -82,11 +83,13 @@ fun AppSplashScreen(onFinished: () -> Unit) {
             .background(CheckingHeaderBg)
             .systemBarsPadding(),
     ) {
-        Canvas(
-            modifier = Modifier
-                .size(width = 300.dp, height = 232.dp)
-                .align(Alignment.Center),
+        Column(
+            modifier = Modifier.align(Alignment.Center),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
+            Canvas(
+                modifier = Modifier.size(width = 300.dp, height = 232.dp),
+            ) {
             val s = min(size.width / 220f, size.height / 170f)
             val offsetX = (size.width - 220f * s) / 2f
             val offsetY = (size.height - 170f * s) / 2f
@@ -112,6 +115,17 @@ fun AppSplashScreen(onFinished: () -> Unit) {
                     }
                 }
             }
+            }
+            // V1.6.2 — app version shown right below the animated logo; tracks BuildConfig.VERSION_NAME.
+            Text(
+                text = BuildConfig.VERSION_NAME,
+                style = MaterialTheme.typography.labelMedium.copy(
+                    fontFamily = ArimoFamily,
+                    letterSpacing = 1.sp,
+                ),
+                color = Color.White.copy(alpha = 0.9f),
+                modifier = Modifier.padding(top = 8.dp),
+            )
         }
 
         val footerStyle = MaterialTheme.typography.labelSmall.copy(

@@ -1,6 +1,7 @@
 package br.com.tscode.checking.i18n
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -118,5 +119,57 @@ class I18nTest {
         val ptDict = getDictionary("pt")
         val xxDict = getDictionary("xx")
         assertEquals(ptDict, xxDict)
+    }
+
+    // ── plan004 EP3 regression guard: the 5 new history.* keys must resolve in all 6 languages ─────────
+    // EP3 added these keys to every dictionary but shipped no test pinning them; this guards against a
+    // future drop from any one dict (which t() would silently mask via the PT fallback at runtime).
+    @Test
+    fun historyPlan004Keys_resolveInAllSixLanguages() {
+        val keys = listOf(
+            "history.colActivity", "history.activityCheckin", "history.activityCheckout",
+            "history.loadError", "history.retry",
+        )
+        listOf("pt", "en", "zh", "ms", "id", "tl").forEach { lang ->
+            keys.forEach { key ->
+                val value = t(key, null, lang)
+                assertNotEquals("$key did not resolve for $lang (missing from that dictionary)", key, value)
+                assertTrue("$key resolved empty for $lang", value.isNotEmpty())
+            }
+        }
+    }
+
+    // ── plan004 EP8 regression guard: the localized Settings "Activities" row label resolves everywhere ─
+    @Test
+    fun settingsActivitiesLabel_resolvesInAllSixLanguages() {
+        listOf("pt", "en", "zh", "ms", "id", "tl").forEach { lang ->
+            val value = t("settings.activitiesLabel", null, lang)
+            assertNotEquals("settings.activitiesLabel did not resolve for $lang", "settings.activitiesLabel", value)
+            assertTrue("settings.activitiesLabel resolved empty for $lang", value.isNotEmpty())
+        }
+    }
+
+    // ── U2 regression guard: a manual section title must NEVER carry its own number prefix ────────────
+    // ManualScreen.ManualSection renders the number once (the bold `index`); if a title also began with
+    // "N. " it would reproduce the old "N. N." double-numbering. Guard all 16 sections × 6 languages.
+    @Test
+    fun manualSectionTitles_doNotEmbedNumberPrefix() {
+        val sections = listOf(
+            "overview", "authFlow", "userRegistration", "passwordRegistration", "login", "attendance",
+            "projectSelection", "location", "automaticActivities", "transport", "passwordChange",
+            "settings", "support", "faq", "scheduledPause", "accident",
+        )
+        val numberPrefix = Regex("""^\s*\d+\.""")
+        listOf("pt", "en", "zh", "ms", "id", "tl").forEach { lang ->
+            sections.forEach { sec ->
+                val key = "manual.sections.$sec.title"
+                val title = t(key, null, lang)
+                assertNotEquals("$key did not resolve for $lang", key, title)
+                assertFalse(
+                    "$key for $lang must not start with a number prefix (would cause \"N. N.\"): '$title'",
+                    numberPrefix.containsMatchIn(title),
+                )
+            }
+        }
     }
 }

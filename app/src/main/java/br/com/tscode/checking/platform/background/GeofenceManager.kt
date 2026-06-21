@@ -7,6 +7,7 @@ import android.content.Intent
 import android.os.Build
 import br.com.tscode.checking.core.result.AppResult
 import br.com.tscode.checking.domain.repository.CheckRepository
+import br.com.tscode.checking.platform.activitylog.ActivityLogger
 import com.google.android.gms.location.Geofence
 import com.google.android.gms.location.GeofencingRequest
 import com.google.android.gms.location.LocationServices
@@ -24,6 +25,7 @@ import kotlin.coroutines.resumeWithException
 class GeofenceManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val checkRepository: CheckRepository,
+    private val activityLogger: ActivityLogger,
 ) {
 
     // Fetch the current project's circles and register them with Play Services.
@@ -66,6 +68,7 @@ class GeofenceManager @Inject constructor(
             }
         }.onSuccess {
             android.util.Log.i(TAG, "Registered ${geofences.size} geofence(s) with Play Services")
+            activityLogger.logSystem("Geofences registered (${geofences.size}).") // plan004
         }.onFailure {
             android.util.Log.w(TAG, "Geofence registration failed", it)
         }

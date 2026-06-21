@@ -321,6 +321,32 @@ fun ManualScreen(
                 ),
             )
 
+            // Section 15 — Scheduled Pause (carried over from the text tutorial; text-only)
+            ManualSection(
+                index = "15",
+                title = t("manual.sections.scheduledPause.title", null),
+                lead = t("manual.sections.scheduledPause.lead", null),
+                items = listOf(
+                    t("manual.sections.scheduledPause.item1", null),
+                    t("manual.sections.scheduledPause.item2", null),
+                    t("manual.sections.scheduledPause.item3", null),
+                ),
+                t = t,
+            )
+
+            // Section 16 — Accident mode (carried over from the text tutorial; text-only)
+            ManualSection(
+                index = "16",
+                title = t("manual.sections.accident.title", null),
+                lead = t("manual.sections.accident.lead", null),
+                items = listOf(
+                    t("manual.sections.accident.item1", null),
+                    t("manual.sections.accident.item2", null),
+                    t("manual.sections.accident.item3", null),
+                ),
+                t = t,
+            )
+
             Spacer(modifier = Modifier.height(Tokens.sectionGap))
         }
     }

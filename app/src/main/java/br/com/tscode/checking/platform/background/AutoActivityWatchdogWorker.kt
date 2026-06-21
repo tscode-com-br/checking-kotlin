@@ -7,6 +7,8 @@ import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import br.com.tscode.checking.domain.model.ActivitySeverity
+import br.com.tscode.checking.platform.activitylog.ActivityLogger
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import java.util.concurrent.TimeUnit
@@ -21,12 +23,16 @@ class AutoActivityWatchdogWorker @AssistedInject constructor(
     @Assisted appContext: Context,
     @Assisted params: WorkerParameters,
     private val orchestrator: BackgroundCheckOrchestrator,
+    private val activityLogger: ActivityLogger,
 ) : CoroutineWorker(appContext, params) {
 
     override suspend fun doWork(): Result {
         // Restart the FGS if it was killed by the OS.
         if (!AutoActivityForegroundService.isRunning) {
             AutoActivityController.start(applicationContext)
+            activityLogger.logSystem("Watchdog restarted the background service.", ActivitySeverity.WARNING) // plan004
+        } else {
+            activityLogger.logSystem("Watchdog check: service healthy.") // plan004
         }
         // Run the same backstop evaluation the FGS timer would have run.
         orchestrator.runOnce(OrchestratorTrigger.TIMER)

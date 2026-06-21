@@ -56,16 +56,17 @@ fun AuthRow(
     onSettingsClick: () -> Unit,
     onRequestRegistrationClick: () -> Unit,
     t: (String, Map<String, String>?) -> String,
+    awaitingApproval: Boolean = false,
     autoActivitiesGlow: FieldGlow = FieldGlow.None,
     modifier: Modifier = Modifier,
 ) {
     var passwordVisible by remember { mutableStateOf(false) }
 
     // The colored glow mirrors the web's auth-field state classes:
-    //   authenticated → green, key recognized (awaiting login) → orange.
+    //   authenticated → green, key recognized (awaiting login) OR awaiting admin approval (plan003) → orange.
     val glow = when {
         isAuthenticated -> FieldGlow.Authenticated
-        isFound -> FieldGlow.Pending
+        awaitingApproval || isFound -> FieldGlow.Pending
         else -> FieldGlow.None
     }
 

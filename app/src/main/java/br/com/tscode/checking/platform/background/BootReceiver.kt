@@ -6,6 +6,7 @@ import android.content.Intent
 import br.com.tscode.checking.data.local.AppPreferencesDataSource
 import br.com.tscode.checking.domain.clientstate.resolvePersistedUserSettings
 import br.com.tscode.checking.domain.clientstate.UserSettings
+import br.com.tscode.checking.platform.activitylog.ActivityLogger
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -21,6 +22,7 @@ import javax.inject.Inject
 class BootReceiver : BroadcastReceiver() {
 
     @Inject lateinit var appPrefs: AppPreferencesDataSource
+    @Inject lateinit var activityLogger: ActivityLogger
 
     private val settingsJson = Json { ignoreUnknownKeys = true; coerceInputValues = true }
 
@@ -46,6 +48,7 @@ class BootReceiver : BroadcastReceiver() {
                 // Start FGS + enqueue WorkManager watchdog (via the single entry point).
                 // The FGS registers geofences in its onStartCommand launch block (T3B.9).
                 AutoActivityController.start(context)
+                activityLogger.logSystem("Device rebooted — Checking re-armed.") // plan004
             } finally {
                 pendingResult.finish()
             }

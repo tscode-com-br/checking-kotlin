@@ -33,6 +33,7 @@ class AuthRepositoryImpl @Inject constructor(
             hasPassword = r.hasPassword,
             authenticated = r.authenticated,
             message = r.message,
+            pendingApproval = r.pendingApproval,
         )
     }
 
@@ -102,11 +103,15 @@ class AuthRepositoryImpl @Inject constructor(
             )
         )
         AuthStatus(
-            found = true,
+            // plan003 — only "registered" (legacy/flag-off) yields a real, found+authenticated user;
+            // "pending"/"queue_full" carry no User yet.
+            found = r.status == "registered",
             chave = chave,
             hasPassword = r.hasPassword,
             authenticated = r.authenticated,
             message = r.message,
+            pendingApproval = r.pendingApproval,
+            queueFull = r.queueFull,
         )
     }
 

@@ -45,6 +45,8 @@ fun CheckHistoryDialog(
     action: CheckAction,
     entries: List<CheckHistoryEntry>,
     isLoading: Boolean,
+    isError: Boolean,
+    onRetry: () -> Unit,
     langCode: String,
     onDismiss: () -> Unit,
     t: (String, Map<String, String>?) -> String,
@@ -67,21 +69,38 @@ fun CheckHistoryDialog(
                 style = MaterialTheme.typography.bodyMedium,
                 color = CheckingTextMuted,
             )
+            // plan004 EP2 — a load FAILURE is distinct from an empty history: show a clear, retryable
+            // message instead of silently rendering "empty". (i18n keys added in EP3.)
+            isError -> {
+                Text(
+                    text = t("history.loadError", null),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = CheckingTextMuted,
+                )
+                TextButton(onClick = onRetry, modifier = Modifier.align(Alignment.Start)) {
+                    Text(text = t("history.retry", null), color = CheckingPrimary)
+                }
+            }
             entries.isEmpty() -> Text(
                 text = t("history.empty", null),
                 style = MaterialTheme.typography.bodyMedium,
                 color = CheckingTextMuted,
             )
             else -> {
-                // Header
+                // Header — Data | Hora | Atividade | Local (plan004 EP3; Local kept as-is)
                 Row(modifier = Modifier.fillMaxWidth()) {
                     HeaderCell(t("history.colDate", null), weight = 1f)
                     HeaderCell(t("history.colTime", null), weight = 0.8f)
-                    HeaderCell(t("history.colLocal", null), weight = 1.6f)
+                    HeaderCell(t("history.colActivity", null), weight = 1f)
+                    HeaderCell(t("history.colLocal", null), weight = 1.4f)
                 }
                 HorizontalDivider(color = CheckingDivider)
                 entries.forEach { entry ->
                     val zoned = entry.time?.atZone(HISTORY_ZONE)
+                    val activityText = t(
+                        if (entry.action == CheckAction.CHECKIN) "history.activityCheckin" else "history.activityCheckout",
+                        null,
+                    )
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -90,7 +109,8 @@ fun CheckHistoryDialog(
                     ) {
                         BodyCell(zoned?.format(dateFmt) ?: "-", weight = 1f)
                         BodyCell(zoned?.format(timeFmt) ?: "-", weight = 0.8f)
-                        BodyCell(entry.local ?: "-", weight = 1.6f)
+                        BodyCell(activityText, weight = 1f)
+                        BodyCell(entry.local ?: "-", weight = 1.4f)
                     }
                 }
             }

@@ -2,8 +2,11 @@ package br.com.tscode.checking.domain.usecase
 
 import br.com.tscode.checking.core.error.ApiError
 import br.com.tscode.checking.core.result.AppResult
+import br.com.tscode.checking.domain.model.ActivitySeverity
 import br.com.tscode.checking.domain.model.LocationMatch
+import br.com.tscode.checking.domain.model.MatchStatus
 import br.com.tscode.checking.domain.repository.CheckRepository
+import br.com.tscode.checking.platform.activitylog.ActivityLogger
 import br.com.tscode.checking.platform.location.LocationCapture
 import br.com.tscode.checking.platform.location.LocationProvider
 import javax.inject.Inject
@@ -24,12 +27,31 @@ sealed class LocationCaptureResult {
 class CaptureLocationUseCase @Inject constructor(
     private val locationProvider: LocationProvider,
     private val checkRepository: CheckRepository,
+    private val activityLogger: ActivityLogger,
 ) {
     suspend operator fun invoke(accuracyThresholdMeters: Int): LocationCaptureResult {
         return when (val capture = locationProvider.capture(accuracyThresholdMeters)) {
             is LocationCapture.Success -> {
                 when (val result = checkRepository.matchLocation(capture.lat, capture.lon, capture.accuracyMeters)) {
-                    is AppResult.Success -> LocationCaptureResult.Matched(result.data)
+                    is AppResult.Success -> {
+                        // plan004 — a GPS fix was obtained (single chokepoint for manual + automatic
+                        // captures, so the row is never duplicated). Side-effect-only, off-thread.
+                        val match = result.data
+                        if (match.status == MatchStatus.ACCURACY_TOO_LOW) {
+                            activityLogger.logLocation(
+                                "Location accuracy too low (±${capture.accuracyMeters.toInt()}m).",
+                                null,
+                                ActivitySeverity.WARNING,
+                            )
+                        } else {
+                            activityLogger.logLocation(
+                                "Location fixed (±${capture.accuracyMeters.toInt()}m) → " +
+                                    (match.resolvedLocal?.takeIf { it.isNotBlank() } ?: "unknown") + ".",
+                                match.resolvedLocal,
+                            )
+                        }
+                        LocationCaptureResult.Matched(match)
+                    }
                     is AppResult.Failure -> LocationCaptureResult.NetworkError(
                         if (result.error is ApiError.Network) {
                             LocationReading(capture.lat, capture.lon, capture.accuracyMeters)
