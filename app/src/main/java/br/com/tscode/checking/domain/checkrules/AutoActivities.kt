@@ -84,6 +84,27 @@ fun isMixedZoneCooldownActive(
     return (reference.toEpochMilli() - lastMixedZoneActivity.timestamp.toEpochMilli()) < cooldownMs
 }
 
+fun resolveLastRecordedActivityTimestamp(state: HistoryState?): Instant? {
+    val lastRecordedAction = resolveLastRecordedAction(state)
+    if (lastRecordedAction != CheckAction.CHECKIN && lastRecordedAction != CheckAction.CHECKOUT) return null
+    return resolveRecordedActionTimestamp(state, lastRecordedAction)
+}
+
+// temp006: cooldown da 'Zona Mista' baseado na ÚLTIMA atividade registrada (check-in OU check-out, em
+// QUALQUER localização) — diferente de isMixedZoneCooldownActive, que exige que o currentLocal já seja a
+// própria 'Zona Mista'. Usado para suprimir o toggle espúrio por drift de GPS no Branch B.
+fun isMixedZoneCooldownActiveForLastActivity(
+    state: HistoryState?,
+    mixedZoneIntervalMinutes: Int,
+    referenceTime: Instant? = null,
+): Boolean {
+    val lastTimestamp = resolveLastRecordedActivityTimestamp(state) ?: return false
+    val cooldownMs = resolveMixedZoneCooldownMilliseconds(mixedZoneIntervalMinutes)
+    if (cooldownMs <= 0) return false
+    val reference = referenceTime ?: Instant.now()
+    return (reference.toEpochMilli() - lastTimestamp.toEpochMilli()) < cooldownMs
+}
+
 fun resolveAutomaticCheckInLocation(locationMatch: LocationMatch?): String? =
     locationMatch?.resolvedLocal?.trim()?.takeIf { it.isNotEmpty() }
 
@@ -114,6 +135,16 @@ fun shouldAttemptAutomaticMixedZoneLocationEvent(
     ) {
         if (!isLastRelevantActivityInMixedZone(remoteState) || cooldownMs <= 0) return false
         return !isMixedZoneCooldownActive(remoteState, settings.mixedZoneIntervalMinutes, settings.referenceTime)
+    }
+
+    // temp006 — gate de cooldown no Branch B (estado registrado em OUTRA localização ≠ 'Zona Mista'):
+    // suprime a alternância automática se a ÚLTIMA atividade registrada (check-in OU check-out, em QUALQUER
+    // localização) ocorreu há menos que o intervalo. Evita o toggle espúrio por drift de GPS entre a 'Zona
+    // Mista' e localizações adjacentes (ex.: 'Escritório Principal'). Saídas/entradas genuínas resolvem para
+    // OUTRO resolvedLocal (Zona de CheckOut / OUTSIDE_WORKPLACE / outra área cadastrada) e seguem pelos ramos
+    // separados (exceções imediatas da Situação 8), que permanecem inalterados.
+    if (isMixedZoneCooldownActiveForLastActivity(remoteState, settings.mixedZoneIntervalMinutes, settings.referenceTime)) {
+        return false
     }
 
     if (lastRecordedAction != CheckAction.CHECKIN) return true

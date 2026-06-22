@@ -199,20 +199,45 @@ class AutoActivitiesSituationTest {
         )
     }
 
-    // ─── Situation 8: Zona Mista alternation (last activity NOT in the mixed zone) ─
+    // ─── Situation 8: Zona Mista alternation a partir de OUTRO local, com a última atividade FORA do intervalo ─
+    // temp006: a alternância 8A/8B a partir de um local ≠ Zona Mista só dispara quando a última atividade
+    // ocorreu há >= intervalo. Antes disparava imediatamente — gerando check-out/in espúrio por drift de GPS
+    // (caso real U4T4). resolveAutomaticActivityForMatch usa Instant.now() como referência do cooldown, então
+    // o timestamp é relativo a agora (20 min atrás > 15 min de intervalo → permite a alternância).
     @Test
-    fun s8_mixed_zone_toggles_from_checkin_to_checkout() = runTest {
+    fun s8_mixed_zone_checkin_outside_interval_checks_out() = runTest {
         assertSubmitted(
-            run(match(MatchStatus.MATCHED, "Zona Mista"), history(CheckAction.CHECKIN, currentLocal = "Unidade P80")),
+            run(
+                match(MatchStatus.MATCHED, "Zona Mista"),
+                history(CheckAction.CHECKIN, currentLocal = "Unidade P80", lastCheckinAt = Instant.now().minusSeconds(20L * 60)),
+            ),
             CheckAction.CHECKOUT, "Zona Mista",
         )
     }
 
     @Test
-    fun s8_mixed_zone_toggles_from_checkout_to_checkin() = runTest {
+    fun s8_mixed_zone_checkout_outside_interval_checks_in() = runTest {
         assertSubmitted(
-            run(match(MatchStatus.MATCHED, "Zona Mista"), history(CheckAction.CHECKOUT, currentLocal = "Unidade P80")),
+            run(
+                match(MatchStatus.MATCHED, "Zona Mista"),
+                history(CheckAction.CHECKOUT, currentLocal = "Unidade P80", lastCheckoutAt = Instant.now().minusSeconds(20L * 60)),
+            ),
             CheckAction.CHECKIN, "Zona Mista",
+        )
+    }
+
+    // temp006: dentro do intervalo, o drift para Zona Mista a partir de OUTRO local NÃO gera ação (end-to-end).
+    @Test
+    fun s8_mixed_zone_checkin_within_interval_no_action() = runTest {
+        assertNoSubmit(
+            run(match(MatchStatus.MATCHED, "Zona Mista"), history(CheckAction.CHECKIN, currentLocal = "Unidade P80")),
+        )
+    }
+
+    @Test
+    fun s8_mixed_zone_checkout_within_interval_no_action() = runTest {
+        assertNoSubmit(
+            run(match(MatchStatus.MATCHED, "Zona Mista"), history(CheckAction.CHECKOUT, currentLocal = "Unidade P80")),
         )
     }
 
@@ -239,6 +264,63 @@ class AutoActivitiesSituationTest {
             MixedZoneDecisionSettings(mixedZoneIntervalMinutes = 15, referenceTime = now),
         )
         assertTrue("cooldown expired (20 min >= 15 min) → toggle allowed", fire)
+    }
+
+    // ─── Situation 8 (temp006): drift de GPS a partir de OUTRO local — cooldown pela ÚLTIMA atividade (pure fn) ─
+    @Test
+    fun s8_mixed_zone_drift_checkout_pure_within_then_after() {
+        val now = Instant.parse("2026-06-16T12:00:00Z")
+        val within = history(CheckAction.CHECKIN, currentLocal = "Unidade P80", lastCheckinAt = now.minusSeconds(5L * 60))
+        assertFalse(
+            "drift para Zona Mista 5 min após check-in (< 15) deve ser suprimido",
+            shouldAttemptAutomaticMixedZoneLocationEvent(
+                match(MatchStatus.MATCHED, "Zona Mista"), within,
+                MixedZoneDecisionSettings(mixedZoneIntervalMinutes = 15, referenceTime = now),
+            ),
+        )
+        val after = history(CheckAction.CHECKIN, currentLocal = "Unidade P80", lastCheckinAt = now.minusSeconds(20L * 60))
+        assertTrue(
+            "20 min após check-in (>= 15) volta a permitir a alternância",
+            shouldAttemptAutomaticMixedZoneLocationEvent(
+                match(MatchStatus.MATCHED, "Zona Mista"), after,
+                MixedZoneDecisionSettings(mixedZoneIntervalMinutes = 15, referenceTime = now),
+            ),
+        )
+    }
+
+    @Test
+    fun s8_mixed_zone_drift_checkin_pure_within_then_after() {
+        val now = Instant.parse("2026-06-16T12:00:00Z")
+        val within = history(CheckAction.CHECKOUT, currentLocal = "Unidade P80", lastCheckoutAt = now.minusSeconds(5L * 60))
+        assertFalse(
+            "drift para Zona Mista 5 min após check-out (< 15) deve ser suprimido",
+            shouldAttemptAutomaticMixedZoneLocationEvent(
+                match(MatchStatus.MATCHED, "Zona Mista"), within,
+                MixedZoneDecisionSettings(mixedZoneIntervalMinutes = 15, referenceTime = now),
+            ),
+        )
+        val after = history(CheckAction.CHECKOUT, currentLocal = "Unidade P80", lastCheckoutAt = now.minusSeconds(20L * 60))
+        assertTrue(
+            "20 min após check-out (>= 15) volta a permitir a alternância",
+            shouldAttemptAutomaticMixedZoneLocationEvent(
+                match(MatchStatus.MATCHED, "Zona Mista"), after,
+                MixedZoneDecisionSettings(mixedZoneIntervalMinutes = 15, referenceTime = now),
+            ),
+        )
+    }
+
+    // temp006: o cooldown só afeta leituras 'Zona Mista'. Saídas/entradas genuínas resolvem para OUTRO local
+    // e seguem por ramos separados (inalterados), MESMO logo após uma atividade (exceções imediatas Situação 8).
+    @Test
+    fun s8_mixed_zone_drift_cooldown_does_not_block_other_locations() = runTest {
+        assertSubmitted(
+            run(match(MatchStatus.MATCHED, "Zona de CheckOut"), history(CheckAction.CHECKIN, currentLocal = "Unidade P80")),
+            CheckAction.CHECKOUT, "Zona de CheckOut",
+        )
+        assertSubmitted(
+            run(match(MatchStatus.MATCHED, "Unidade P81"), history(CheckAction.CHECKOUT, currentLocal = "Unidade P80")),
+            CheckAction.CHECKIN, "Unidade P81",
+        )
     }
 
     // ─── No history (first registration handled by the normal flow, like the web) ─
