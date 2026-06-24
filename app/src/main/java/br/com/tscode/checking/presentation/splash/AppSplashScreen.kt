@@ -116,7 +116,7 @@ fun AppSplashScreen(onFinished: () -> Unit) {
                 }
             }
             }
-            // V1.6.2 — app version shown right below the animated logo; tracks BuildConfig.VERSION_NAME.
+            // V1.6.3 — app version shown right below the animated logo; tracks BuildConfig.VERSION_NAME.
             Text(
                 text = BuildConfig.VERSION_NAME,
                 style = MaterialTheme.typography.labelMedium.copy(
