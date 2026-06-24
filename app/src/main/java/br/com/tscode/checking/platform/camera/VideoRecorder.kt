@@ -1,5 +1,6 @@
 package br.com.tscode.checking.platform.camera
 
+import android.annotation.SuppressLint
 import android.content.Context
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.Preview
@@ -76,6 +77,10 @@ class VideoRecorder @Inject constructor(
 
     // Starts recording to a temp MP4 file. Returns the output File immediately;
     // recording continues until stopRecording() is called.
+    // CAMERA/RECORD_AUDIO are requested and confirmed by the accident-mode recording UI (permission
+    // ladder) before this is ever called; CameraX's withAudioEnabled()/start() trip lint's
+    // MissingPermission check, which we suppress given that runtime guarantee.
+    @SuppressLint("MissingPermission")
     fun startRecording(videoCapture: VideoCapture<Recorder>, outputFile: File): File {
         val outputOptions = FileOutputOptions.Builder(outputFile).build()
         activeRecording = videoCapture.output
