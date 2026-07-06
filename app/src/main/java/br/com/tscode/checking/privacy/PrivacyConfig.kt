@@ -23,7 +23,9 @@ object PrivacyConfig {
     const val privacyRequestsEmail = "tscode.com.br@gmail.com"
 
     // ── Política de Privacidade pública (exigida pelo Google Play) ───────────────
-    const val privacyPolicyUrl = "https://www.tscode.com.br/privacidade"
+    // Servida pelo monólito via /checking/ (que remove o prefixo e chega em GET /privacidade no app).
+    // A URL "bare" /privacidade exigiria uma rota extra no nginx público do droplet; esta já funciona (200).
+    const val privacyPolicyUrl = "https://www.tscode.com.br/checking/privacidade"
 
     // ── Transferência internacional (art. 33) — confirmado FORA do Brasil ────────
     const val internationalTransfer = true
