@@ -54,4 +54,7 @@ class SecurePasswordStore @Inject constructor(
             val pw = v as? String ?: return@mapNotNull null
             if (key.length == 4 && isPasswordLengthValid(pw)) key to pw else null
         }.toMap()
+
+    /** LGPD art. 18 (eliminação) — removes every stored password. Used by "Erase data from this device". */
+    fun clearAll() = prefs.edit().clear().apply()
 }

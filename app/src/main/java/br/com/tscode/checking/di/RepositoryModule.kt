@@ -10,6 +10,8 @@ import br.com.tscode.checking.domain.repository.AuthRepository
 import br.com.tscode.checking.domain.repository.CheckRepository
 import br.com.tscode.checking.domain.repository.ProjectRepository
 import br.com.tscode.checking.domain.repository.TransportRepository
+import br.com.tscode.checking.platform.background.offline.EncryptedOfflineQueueStore
+import br.com.tscode.checking.platform.background.offline.OfflineQueueStore
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -34,4 +36,8 @@ abstract class RepositoryModule {
 
     @Binds @Singleton
     abstract fun bindAccidentRepository(impl: AccidentRepositoryImpl): AccidentRepository
+
+    // LGPD art. 46 — the offline check queue (precise GPS) is encrypted at rest.
+    @Binds @Singleton
+    abstract fun bindOfflineQueueStore(impl: EncryptedOfflineQueueStore): OfflineQueueStore
 }

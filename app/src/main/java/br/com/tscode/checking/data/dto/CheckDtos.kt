@@ -90,6 +90,11 @@ data class WebCheckSubmitRequest(
     val informe: InformeType,
     @SerialName("event_time") val eventTime: String,
     @SerialName("client_event_id") val clientEventId: String,
+    // 24h FORMS window (offline replay, P8): false for a replayed event older than 24h relative to the
+    // NEWEST queued activity, so a multi-day offline backlog fills FORMS with only the most recent
+    // check-in/out (the activity is still recorded at its real time). Defaults true → live submissions
+    // omit it (server defaults true), and only the false value is ever sent over the wire.
+    @SerialName("fill_forms") val fillForms: Boolean = true,
 )
 
 @Serializable

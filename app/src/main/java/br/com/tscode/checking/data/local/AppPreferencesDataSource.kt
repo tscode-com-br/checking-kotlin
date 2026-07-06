@@ -25,6 +25,9 @@ class AppPreferencesDataSource @Inject constructor(
         // Offline check queue (P8): a JSON list of PendingCheckEvent awaiting sync. Persisted so
         // check-ins/outs captured while offline survive process death and are replayed on reconnect.
         val PENDING_CHECKS_JSON = stringPreferencesKey("pref_pending_checks_json")
+        // LGPD (art. 8º §2 — ônus da prova do consentimento): ISO-8601 timestamp of when the user
+        // affirmatively accepted the background-location + international-transfer prominent disclosure.
+        val BG_LOCATION_CONSENT_AT = stringPreferencesKey("pref_bg_location_consent_at")
     }
 
     val language: Flow<String> = dataStore.data.map { it[LANGUAGE] ?: "" }
@@ -32,6 +35,7 @@ class AppPreferencesDataSource @Inject constructor(
     val userSettingsJson: Flow<String> = dataStore.data.map { it[USER_SETTINGS_JSON] ?: "" }
     val transportLocalJson: Flow<String> = dataStore.data.map { it[TRANSPORT_LOCAL_JSON] ?: "" }
     val pendingChecksJson: Flow<String> = dataStore.data.map { it[PENDING_CHECKS_JSON] ?: "" }
+    val backgroundLocationConsentAt: Flow<String> = dataStore.data.map { it[BG_LOCATION_CONSENT_AT] ?: "" }
     val seenAccidentIds: Flow<Set<Int>> = dataStore.data.map { prefs ->
         (prefs[SEEN_ACCIDENT_IDS] ?: "")
             .split(',')
@@ -52,4 +56,11 @@ class AppPreferencesDataSource @Inject constructor(
 
     suspend fun setFlag(name: String, value: Boolean) =
         dataStore.edit { it[booleanPreferencesKey("pref_flag_$name")] = value }
+
+    suspend fun setBackgroundLocationConsentAt(iso8601: String) =
+        dataStore.edit { it[BG_LOCATION_CONSENT_AT] = iso8601 }
+
+    /** LGPD art. 18 (eliminação) — wipes ALL locally stored preferences (chave, settings, offline queue,
+     *  flags, consent record, …). Server-side records are untouched. Used by "Erase data from this device". */
+    suspend fun clearAll() = dataStore.edit { it.clear() }
 }

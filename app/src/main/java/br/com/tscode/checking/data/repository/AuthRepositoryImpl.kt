@@ -1,6 +1,7 @@
 package br.com.tscode.checking.data.repository
 
 import br.com.tscode.checking.core.result.AppResult
+import br.com.tscode.checking.core.result.map
 import br.com.tscode.checking.data.api.AuthApi
 import br.com.tscode.checking.data.api.CheckApi
 import br.com.tscode.checking.data.dto.WebPasswordChangeRequest
@@ -52,6 +53,16 @@ class AuthRepositoryImpl @Inject constructor(
         safeApiCall { try { authApi.logout() } catch (_: Exception) { } }
         cookieJar.clear()
         return AppResult.Success(Unit)
+    }
+
+    // LGPD art. 18 — self-delete the account. The real result is returned so the caller knows whether the
+    // SERVER delete succeeded. The session cookie is cleared ONLY on success: a 409 (admin / accident
+    // opener / open accident) means the account still exists, so the user must stay logged in to see the
+    // message and retry via the privacy channel.
+    override suspend fun deleteAccount(): AppResult<Unit> {
+        val result = safeApiCall { authApi.deleteAccount() }
+        if (result is AppResult.Success) cookieJar.clear()
+        return result.map { }
     }
 
     override suspend fun registerPassword(

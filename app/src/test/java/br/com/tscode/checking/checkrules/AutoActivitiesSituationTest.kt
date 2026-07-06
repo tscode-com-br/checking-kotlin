@@ -87,7 +87,7 @@ class AutoActivitiesSituationTest {
 
     private suspend fun run(match: LocationMatch, state: HistoryState?): AutoActivitiesResult {
         coEvery { captureLocationUseCase(any()) } returns LocationCaptureResult.Matched(match)
-        coEvery { checkRepository.submit(any(), any(), any(), any(), any(), any(), any()) } returns
+        coEvery { checkRepository.submit(any(), any(), any(), any(), any(), any(), any(), any()) } returns
             AppResult.Success(history(CheckAction.CHECKIN))
         return useCase(chave, projects, state, mixedZoneIntervalMinutes = 15, accuracyThresholdMeters = 50)
     }
@@ -101,7 +101,7 @@ class AutoActivitiesSituationTest {
 
     private suspend fun assertNoSubmit(result: AutoActivitiesResult) {
         assertEquals(AutoActivitiesResult.NoAction, result)
-        coVerify(exactly = 0) { checkRepository.submit(any(), any(), any(), any(), any(), any(), any()) }
+        coVerify(exactly = 0) { checkRepository.submit(any(), any(), any(), any(), any(), any(), any(), any()) }
     }
 
     // ─── Situation 1: last=check-in, in CheckOut zone OR far → CHECK-OUT ──────────

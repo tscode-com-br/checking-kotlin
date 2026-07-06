@@ -91,7 +91,7 @@ class RunAutomaticActivitiesLoggingTest {
         val useCase = useCaseWith(dao)
         coEvery { captureLocationUseCase(any()) } returns
             LocationCaptureResult.Matched(match(MatchStatus.MATCHED, "Unidade P80"))
-        coEvery { checkRepository.submit(any(), any(), any(), any(), any(), any(), any()) } returns
+        coEvery { checkRepository.submit(any(), any(), any(), any(), any(), any(), any(), any()) } returns
             AppResult.Success(history(CheckAction.CHECKIN))
 
         val result = useCase(chave, projects, history(CheckAction.CHECKOUT), 15, 50)
@@ -111,7 +111,7 @@ class RunAutomaticActivitiesLoggingTest {
         val useCase = useCaseWith(dao)
         coEvery { captureLocationUseCase(any()) } returns
             LocationCaptureResult.Matched(match(MatchStatus.MATCHED, "Unidade P80"))
-        coEvery { checkRepository.submit(any(), any(), any(), any(), any(), any(), any()) } returns
+        coEvery { checkRepository.submit(any(), any(), any(), any(), any(), any(), any(), any()) } returns
             AppResult.Failure(ApiError.Network)
 
         val result = useCase(chave, projects, history(CheckAction.CHECKOUT), 15, 50)
@@ -131,7 +131,7 @@ class RunAutomaticActivitiesLoggingTest {
         val useCase = useCaseWith(dao)
         coEvery { captureLocationUseCase(any()) } returns
             LocationCaptureResult.Matched(match(MatchStatus.MATCHED, "Unidade P80"))
-        coEvery { checkRepository.submit(any(), any(), any(), any(), any(), any(), any()) } returns
+        coEvery { checkRepository.submit(any(), any(), any(), any(), any(), any(), any(), any()) } returns
             AppResult.Failure(ApiError.Http(500, "boom"))
 
         val result = useCase(chave, projects, history(CheckAction.CHECKOUT), 15, 50)
@@ -189,7 +189,7 @@ class RunAutomaticActivitiesLoggingTest {
         val useCase = useCaseWith(dao)
         coEvery { captureLocationUseCase(any()) } returns
             LocationCaptureResult.Matched(match(MatchStatus.MATCHED, "Unidade P80"))
-        coEvery { checkRepository.submit(any(), any(), any(), any(), any(), any(), any()) } returns
+        coEvery { checkRepository.submit(any(), any(), any(), any(), any(), any(), any(), any()) } returns
             AppResult.Success(history(CheckAction.CHECKIN))
 
         val result = useCase(chave, projects, history(CheckAction.CHECKOUT), 15, 50)

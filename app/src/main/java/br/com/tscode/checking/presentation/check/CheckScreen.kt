@@ -24,9 +24,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -83,8 +85,10 @@ import br.com.tscode.checking.presentation.settings.notifications.NotificationsD
 import br.com.tscode.checking.presentation.settings.activitylog.ActivityLogDialog
 import br.com.tscode.checking.presentation.settings.diagnostics.EvaluationLogDialog
 import br.com.tscode.checking.presentation.settings.scheduledpause.ScheduledPauseDialog
+import br.com.tscode.checking.presentation.theme.CheckingError
 import br.com.tscode.checking.presentation.theme.CheckingHeaderBg
 import br.com.tscode.checking.presentation.theme.CheckingOnPrimary
+import br.com.tscode.checking.presentation.theme.CheckingPrimary
 import br.com.tscode.checking.presentation.theme.CheckingSurfaceEnd
 import br.com.tscode.checking.presentation.theme.CheckingSurfaceStart
 import br.com.tscode.checking.presentation.theme.Tokens
@@ -93,6 +97,7 @@ import br.com.tscode.checking.presentation.theme.Tokens
 fun CheckScreen(
     onNavigateToManual: () -> Unit = {},
     onNavigateToAbout: () -> Unit = {},
+    onNavigateToPrivacy: () -> Unit = {},
     vm: CheckViewModel = hiltViewModel(),
     transportVm: TransportViewModel = hiltViewModel(),
     accidentVm: AccidentViewModel = hiltViewModel(),
@@ -103,6 +108,9 @@ fun CheckScreen(
     val transportState by transportVm.uiState.collectAsState()
     val accidentState by accidentVm.uiState.collectAsState()
     var transportScreenOpen by remember { mutableStateOf(false) }
+    // LGPD art. 18 — "Remover Cadastro" confirmation (a sibling of the settings dialog so it survives
+    // the settings dialog closing).
+    var showDeleteAccountConfirm by remember { mutableStateOf(false) }
 
     // Wire accident lifecycle to check state
     LaunchedEffect(state.isAuthenticated, state.chave) {
@@ -433,6 +441,10 @@ fun CheckScreen(
                     vm.dismissDialog()
                     onNavigateToAbout()
                 },
+                onPrivacyClick = {
+                    vm.dismissDialog()
+                    onNavigateToPrivacy()
+                },
                 onManualClick = {
                     vm.dismissDialog()
                     onNavigateToManual()
@@ -440,6 +452,10 @@ fun CheckScreen(
                 onActivitiesClick = {
                     vm.dismissDialog()
                     vm.openActivitiesDialog()
+                },
+                onDeleteAccountClick = {
+                    vm.dismissDialog()
+                    showDeleteAccountConfirm = true
                 },
                 onDismiss = vm::dismissDialog,
                 t = t,
@@ -459,6 +475,7 @@ fun CheckScreen(
 
             CheckDialog.SelfRegistration -> SelfRegistrationDialog(
                 fields = state.selfRegistrationFields,
+                onChaveChanged = vm::onRegChaveChanged,
                 onNomeChanged = vm::onRegNomeChanged,
                 onEmailChanged = vm::onRegEmailChanged,
                 onPasswordChanged = vm::onRegPasswordChanged,
@@ -477,6 +494,7 @@ fun CheckScreen(
                 onPermissionsDenied = vm::onAutoActivitiesPermissionsDenied,
                 onDismiss = vm::dismissDialog,
                 t = t,
+                onBackgroundLocationConsent = vm::recordBackgroundLocationConsent,
             )
 
             CheckDialog.ScheduledPause -> ScheduledPauseDialog(
@@ -526,6 +544,27 @@ fun CheckScreen(
             )
 
             null -> Unit
+        }
+
+        // LGPD art. 18 — "Remover Cadastro" confirmation. Confirm is RED (destructive); on confirm the
+        // ViewModel deletes the account server-side, wipes local data, and resets to the auth prompt.
+        if (showDeleteAccountConfirm) {
+            AlertDialog(
+                onDismissRequest = { showDeleteAccountConfirm = false },
+                title = { Text(t("settings.deleteAccountConfirmTitle", null)) },
+                text = { Text(t("settings.deleteAccountConfirmBody", null)) },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showDeleteAccountConfirm = false
+                        vm.deleteAccount()
+                    }) { Text(t("settings.deleteAccountConfirm", null), color = CheckingError) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDeleteAccountConfirm = false }) {
+                        Text(t("settings.deleteAccountCancel", null), color = CheckingPrimary)
+                    }
+                },
+            )
         }
 
         // Accident acknowledge dialog queue

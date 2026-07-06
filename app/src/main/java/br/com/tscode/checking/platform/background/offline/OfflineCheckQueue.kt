@@ -1,10 +1,8 @@
 package br.com.tscode.checking.platform.background.offline
 
 import android.content.Context
-import br.com.tscode.checking.data.local.AppPreferencesDataSource
 import br.com.tscode.checking.domain.offline.PendingCheckEvent
 import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.decodeFromString
@@ -13,16 +11,17 @@ import kotlinx.serialization.json.Json
 import javax.inject.Inject
 import javax.inject.Singleton
 
-// Persistent FIFO of check events captured while offline (P8). Backed by a JSON list in DataStore
-// (no Room — the queue is tiny and the app already serializes JSON blobs to DataStore). Mutations
-// are serialized by a Mutex so a manual enqueue can't race the sync worker's removals.
+// Persistent FIFO of check events captured while offline (P8). Backed by a JSON blob in an encrypted
+// key-value store ([OfflineQueueStore]) — the queue holds precise GPS coordinates, so it is encrypted
+// at rest (LGPD art. 46), unlike the rest of the app's DataStore. Mutations are serialized by a Mutex
+// so a manual enqueue can't race the sync worker's removals.
 //
 // Every enqueue schedules SyncPendingChecksWorker (network-constrained), so events drain as soon
 // as connectivity returns — including across process death and reboot (WorkManager persists it).
 @Singleton
 class OfflineCheckQueue @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val appPrefs: AppPreferencesDataSource,
+    private val store: OfflineQueueStore,
 ) {
     private val mutex = Mutex()
     private val json = Json { ignoreUnknownKeys = true }
@@ -55,13 +54,13 @@ class OfflineCheckQueue @Inject constructor(
     suspend fun size(): Int = mutex.withLock { readList().size }
 
     private suspend fun readList(): List<PendingCheckEvent> {
-        val raw = appPrefs.pendingChecksJson.first()
+        val raw = store.read()
         if (raw.isEmpty()) return emptyList()
         return runCatching { json.decodeFromString<List<PendingCheckEvent>>(raw) }.getOrElse { emptyList() }
     }
 
     private suspend fun writeList(list: List<PendingCheckEvent>) {
-        appPrefs.setPendingChecksJson(if (list.isEmpty()) "" else json.encodeToString(list))
+        store.write(if (list.isEmpty()) "" else json.encodeToString(list))
     }
 
     companion object {

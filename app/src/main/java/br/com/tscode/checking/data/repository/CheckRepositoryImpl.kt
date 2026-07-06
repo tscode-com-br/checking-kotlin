@@ -79,6 +79,7 @@ class CheckRepositoryImpl @Inject constructor(
         informe: InformeType,
         eventTime: Instant?,
         clientEventId: String?,
+        fillForms: Boolean,
     ): AppResult<HistoryState> = safeApiCall {
         val request = WebCheckSubmitRequest(
             chave = chave,
@@ -88,6 +89,7 @@ class CheckRepositoryImpl @Inject constructor(
             informe = informe.toDto(),
             eventTime = (eventTime ?: clock.now()).toString(),
             clientEventId = clientEventId ?: UUID.randomUUID().toString(),
+            fillForms = fillForms,
         )
         checkApi.submit(request).state.toHistoryState()
     }

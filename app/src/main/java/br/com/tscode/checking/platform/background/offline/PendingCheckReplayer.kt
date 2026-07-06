@@ -36,9 +36,13 @@ class PendingCheckReplayer @Inject constructor(
         while (pass < MAX_PASSES) {
             val pending = queue.peekAll()
             if (pending.isEmpty()) return DrainResult.COMPLETED
+            // Newest queued activity — the reference for the 24h FORMS window. Stable across passes
+            // (peekAll is capture-ordered and the newest event drains last), so every event is compared
+            // against the same anchor. Only the client can compute this: it holds the whole backlog.
+            val newestCapturedAtMs = pending.maxOf { it.capturedAtEpochMs }
             activityLogger.logSyncing(pending.size) // plan004 — replay drain started
             for (event in pending) {
-                when (replay(event)) {
+                when (replay(event, newestCapturedAtMs)) {
                     Outcome.DONE, Outcome.DROP -> queue.remove(event.clientEventId)
                     Outcome.RETRY -> return DrainResult.RETRY // offline / session expired — later
                 }
@@ -48,12 +52,12 @@ class PendingCheckReplayer @Inject constructor(
         return if (queue.size() == 0) DrainResult.COMPLETED else DrainResult.RETRY
     }
 
-    private suspend fun replay(event: PendingCheckEvent): Outcome = when (event) {
-        is PendingCheckEvent.Decided -> replayDecided(event)
-        is PendingCheckEvent.Raw -> replayRaw(event)
+    private suspend fun replay(event: PendingCheckEvent, newestCapturedAtMs: Long): Outcome = when (event) {
+        is PendingCheckEvent.Decided -> replayDecided(event, newestCapturedAtMs)
+        is PendingCheckEvent.Raw -> replayRaw(event, newestCapturedAtMs)
     }
 
-    private suspend fun replayDecided(e: PendingCheckEvent.Decided): Outcome {
+    private suspend fun replayDecided(e: PendingCheckEvent.Decided, newestCapturedAtMs: Long): Outcome {
         val action = if (e.action == "checkout") CheckAction.CHECKOUT else CheckAction.CHECKIN
         val informe = if (e.informe == "retroativo") InformeType.RETROATIVO else InformeType.NORMAL
         val outcome = outcomeOf(
@@ -65,13 +69,14 @@ class PendingCheckReplayer @Inject constructor(
                 informe = informe,
                 eventTime = Instant.ofEpochMilli(e.capturedAtEpochMs),
                 clientEventId = e.clientEventId,
+                fillForms = fillFormsFor(e.capturedAtEpochMs, newestCapturedAtMs),
             ),
         )
         logReplayOutcome(outcome, action, e.local) // plan004
         return outcome
     }
 
-    private suspend fun replayRaw(e: PendingCheckEvent.Raw): Outcome {
+    private suspend fun replayRaw(e: PendingCheckEvent.Raw, newestCapturedAtMs: Long): Outcome {
         val match = when (val r = checkRepository.matchLocation(e.latitude, e.longitude, e.accuracyMeters)) {
             is AppResult.Success -> r.data
             is AppResult.Failure -> return failureOutcome(r.error)
@@ -95,11 +100,20 @@ class PendingCheckReplayer @Inject constructor(
                 informe = InformeType.NORMAL,
                 eventTime = Instant.ofEpochMilli(e.capturedAtEpochMs),
                 clientEventId = e.clientEventId,
+                fillForms = fillFormsFor(e.capturedAtEpochMs, newestCapturedAtMs),
             ),
         )
         logReplayOutcome(outcome, activity.action, activity.local) // plan004
         return outcome
     }
+
+    // A replayed event fills FORMS only if it is within 24h of the NEWEST queued activity, so a device
+    // offline for several days fills FORMS with just the most recent check-in/out. Older events are still
+    // recorded server-side at their real time (sync event + history) — they just don't (re-)fill FORMS.
+    // The window is anchored to the backlog's newest activity (not wall-clock now), so a delayed reconnect
+    // still fills FORMS for the last day of real activity. Server enforces the same via fill_forms.
+    private fun fillFormsFor(capturedAtEpochMs: Long, newestCapturedAtMs: Long): Boolean =
+        (newestCapturedAtMs - capturedAtEpochMs) <= FORMS_RECENCY_WINDOW_MS
 
     private fun outcomeOf(result: AppResult<*>): Outcome = when (result) {
         is AppResult.Success -> Outcome.DONE
@@ -130,5 +144,6 @@ class PendingCheckReplayer @Inject constructor(
 
     companion object {
         private const val MAX_PASSES = 5
+        private const val FORMS_RECENCY_WINDOW_MS = 24L * 60 * 60 * 1000 // 24h
     }
 }

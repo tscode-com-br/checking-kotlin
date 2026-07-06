@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -82,6 +83,9 @@ fun AutoActivitiesDialog(
     onPermissionsDenied: () -> Unit,
     onDismiss: () -> Unit,
     t: (String, Map<String, String>?) -> String,
+    // LGPD art. 8º §2 — records the affirmative consent moment when the user accepts the background-location
+    // prominent disclosure. No-op default keeps existing callers/tests compiling.
+    onBackgroundLocationConsent: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -94,6 +98,9 @@ fun AutoActivitiesDialog(
     var oemGuidanceShown by rememberSaveable { mutableStateOf(false) }
     // Show the denial notice below "Revisar Permissões" after a failed ladder run
     var showPermissionsNotice by rememberSaveable { mutableStateOf(false) }
+    // Google Play prominent disclosure (LGPD art. 9º): shown at ladder step 2, BEFORE any background-location
+    // request, with an affirmative allow/decline choice.
+    var showBgDisclosure by rememberSaveable { mutableStateOf(false) }
 
     // P4.1 — live permission checklist (additive). refreshKey re-reads the inspector on ON_RESUME and
     // after a per-row "fix" tap. This status-only observer never touches stepIndex / isWaitingForResume,
@@ -165,8 +172,9 @@ fun AutoActivitiesDialog(
             }
             2 -> {
                 if (!status.backgroundLocationGranted) {
-                    PermissionLadder.launchLocationSettings(context)
-                    isWaitingForResume = true
+                    // Prominent disclosure FIRST (Google Play Location Permissions; LGPD art. 9º). The
+                    // system settings screen is only opened after the user affirmatively accepts, below.
+                    showBgDisclosure = true
                 } else {
                     stepIndex = 3
                 }
@@ -378,6 +386,35 @@ fun AutoActivitiesDialog(
                 color = CheckingPrimary,
             )
         }
+    }
+
+    // Prominent disclosure for background location (Google Play Location Permissions policy + LGPD art. 9º).
+    // Shown before the OS background-location request. Accept → record consent + open the system screen.
+    // Decline (or dismiss) → advance WITHOUT requesting background location (the engine still runs on the
+    // minimum: notifications + precise location), never silently requesting the sensitive permission.
+    if (showBgDisclosure) {
+        AlertDialog(
+            onDismissRequest = {
+                showBgDisclosure = false
+                stepIndex = 3
+            },
+            title = { Text(t("autoActivities.bgDisclosureTitle", null)) },
+            text = { Text(t("autoActivities.bgDisclosureBody", null)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showBgDisclosure = false
+                    onBackgroundLocationConsent()
+                    PermissionLadder.launchLocationSettings(context)
+                    isWaitingForResume = true
+                }) { Text(t("autoActivities.bgDisclosureAccept", null), color = CheckingPrimary) }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showBgDisclosure = false
+                    stepIndex = 3
+                }) { Text(t("autoActivities.bgDisclosureDecline", null), color = CheckingTextMuted) }
+            },
+        )
     }
 }
 

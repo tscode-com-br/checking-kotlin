@@ -65,7 +65,7 @@ class DuplicateEliminationTest {
 
     // mockk matcher for "any submit call" — usable inside coEvery/coVerify (suspend + MockKMatcherScope).
     private suspend fun MockKMatcherScope.anySubmit() =
-        checkRepository.submit(any(), any(), any(), any(), any(), any(), any())
+        checkRepository.submit(any(), any(), any(), any(), any(), any(), any(), any())
 
     // 1. The production bug: geofence EXIT(A)+ENTER(B) = two triggers at the same new location B.
     @Test fun `two_runs_same_new_location_submits_exactly_once`() = runTest {

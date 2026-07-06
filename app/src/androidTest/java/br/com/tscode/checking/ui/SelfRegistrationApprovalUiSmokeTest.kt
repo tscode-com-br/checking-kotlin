@@ -107,6 +107,7 @@ class SelfRegistrationApprovalUiSmokeTest {
             CheckingTheme {
                 SelfRegistrationDialog(
                     fields = SelfRegistrationFields(chave = "NEW1"),
+                    onChaveChanged = {},
                     onNomeChanged = {},
                     onEmailChanged = {},
                     onPasswordChanged = {},
@@ -131,6 +132,7 @@ class SelfRegistrationApprovalUiSmokeTest {
             CheckingTheme {
                 SelfRegistrationDialog(
                     fields = SelfRegistrationFields(chave = "NEW1"),
+                    onChaveChanged = {},
                     onNomeChanged = {},
                     onEmailChanged = {},
                     onPasswordChanged = {},
@@ -144,6 +146,6 @@ class SelfRegistrationApprovalUiSmokeTest {
         }
 
         composeRule.onNodeWithText(tPt("registrationDialog.title")).assertIsDisplayed()
-        composeRule.onNodeWithText("NEW1").assertIsDisplayed() // the read-only key field
+        composeRule.onNodeWithText("NEW1").assertIsDisplayed() // the (editable) key field, seeded from the main screen
     }
 }

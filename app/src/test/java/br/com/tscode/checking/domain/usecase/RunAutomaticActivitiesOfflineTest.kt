@@ -97,7 +97,7 @@ class RunAutomaticActivitiesOfflineTest {
     fun submit_network_failure_enqueues_decided() = runTest {
         coEvery { captureLocationUseCase(any()) } returns
             LocationCaptureResult.Matched(match(MatchStatus.MATCHED, "Unidade P80"))
-        coEvery { checkRepository.submit(any(), any(), any(), any(), any(), any(), any()) } returns
+        coEvery { checkRepository.submit(any(), any(), any(), any(), any(), any(), any(), any()) } returns
             AppResult.Failure(ApiError.Network)
         val slot = slot<PendingCheckEvent>()
         coEvery { offlineQueue.enqueue(capture(slot)) } just Runs
@@ -116,7 +116,7 @@ class RunAutomaticActivitiesOfflineTest {
     fun submit_http_error_does_not_enqueue() = runTest {
         coEvery { captureLocationUseCase(any()) } returns
             LocationCaptureResult.Matched(match(MatchStatus.MATCHED, "Unidade P80"))
-        coEvery { checkRepository.submit(any(), any(), any(), any(), any(), any(), any()) } returns
+        coEvery { checkRepository.submit(any(), any(), any(), any(), any(), any(), any(), any()) } returns
             AppResult.Failure(ApiError.Http(500, "boom"))
         val result = useCase(chave, projects, history(CheckAction.CHECKOUT), 15, 50)
         assertEquals(AutoActivitiesResult.NetworkError, result)

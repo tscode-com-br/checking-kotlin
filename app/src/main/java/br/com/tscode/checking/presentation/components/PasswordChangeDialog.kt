@@ -33,7 +33,7 @@ fun PasswordChangeDialog(
     onDismiss: () -> Unit,
     t: (String, Map<String, String>?) -> String,
 ) {
-    DialogScaffold(onDismiss = onDismiss) {
+    DialogScaffold(onDismiss = onDismiss, dismissOnScrimTap = false) {
         Text(
             text = if (hasPassword) t("passwordDialog.titleChange", null)
                    else t("passwordDialog.titleRegister", null),

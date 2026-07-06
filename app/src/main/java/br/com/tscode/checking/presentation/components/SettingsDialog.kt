@@ -16,6 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.outlined.Chat
+import androidx.compose.material.icons.outlined.DeleteForever
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Lock
@@ -23,6 +24,7 @@ import androidx.compose.material.icons.outlined.MenuBook
 import androidx.compose.material.icons.outlined.MyLocation
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -42,6 +44,7 @@ import br.com.tscode.checking.i18n.SUPPORTED_LANGUAGES
 import br.com.tscode.checking.presentation.check.AutoActivitiesHealth
 import br.com.tscode.checking.presentation.theme.CheckingCardBg
 import br.com.tscode.checking.presentation.theme.CheckingChoiceSelectedBg
+import br.com.tscode.checking.presentation.theme.CheckingError
 import br.com.tscode.checking.presentation.theme.CheckingFieldAuthedBorder
 import br.com.tscode.checking.presentation.theme.CheckingFieldPendingBorder
 import br.com.tscode.checking.presentation.theme.CheckingInputBorder
@@ -67,6 +70,8 @@ fun SettingsDialog(
     autoActivitiesHealth: AutoActivitiesHealth = AutoActivitiesHealth.Off,
     onManualClick: () -> Unit = {},
     onActivitiesClick: () -> Unit = {},
+    onPrivacyClick: () -> Unit = {},
+    onDeleteAccountClick: () -> Unit = {},
 ) {
     // P3.1 — grouped rows under section headers (replaces the old flat wall of PrimaryButtons).
     // Signature, callbacks, auth-gating and the visible t() keys are unchanged; only the layout differs.
@@ -145,6 +150,12 @@ fun SettingsDialog(
             label = t("settings.aboutLabel", null),
             onClick = onAboutClick,
         )
+        // LGPD (arts. 9/18/41) — Privacy & Data Protection: policy, data-subject rights, DPO contact.
+        SettingsRow(
+            icon = Icons.Outlined.Shield,
+            label = t("settings.privacyLabel", null),
+            onClick = onPrivacyClick,
+        )
         // plan004 EP8 — read-only Activities debug log. The row label is the ONLY localized string for this
         // feature; the table the dialog renders is English-only by design.
         SettingsRow(
@@ -152,6 +163,18 @@ fun SettingsDialog(
             label = t("settings.activitiesLabel", null),
             onClick = onActivitiesClick,
         )
+
+        // ── Group 4: Conta — LGPD art. 18 (eliminação). Destructive, so RED and at the very bottom. ──
+        if (isAuthenticated) {
+            SettingsGroupHeader(t("settings.groupAccount", null))
+            SettingsRow(
+                icon = Icons.Outlined.DeleteForever,
+                label = t("settings.deleteAccountLabel", null),
+                onClick = onDeleteAccountClick,
+                tint = CheckingError,
+                labelColor = CheckingError,
+            )
+        }
 
         TextButton(
             onClick = onDismiss,
@@ -183,6 +206,9 @@ private fun SettingsRow(
     label: String,
     onClick: () -> Unit,
     trailing: (@Composable () -> Unit)? = null,
+    // Defaults keep every existing row neutral; a destructive row (e.g. "Remover Cadastro") passes red.
+    tint: Color = CheckingPrimary,
+    labelColor: Color = CheckingTextStrong,
 ) {
     Row(
         modifier = Modifier
@@ -196,13 +222,13 @@ private fun SettingsRow(
         Icon(
             imageVector = icon,
             contentDescription = null,
-            tint = CheckingPrimary,
+            tint = tint,
             modifier = Modifier.size(Tokens.iconSmall),
         )
         Text(
             text = label,
             style = MaterialTheme.typography.bodyLarge,
-            color = CheckingTextStrong,
+            color = labelColor,
             modifier = Modifier.weight(1f),
         )
         if (trailing != null) {

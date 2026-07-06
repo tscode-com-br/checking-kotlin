@@ -72,6 +72,6 @@ class OrchestratorSingleFlightTest {
         advanceUntilIdle()
         assertTrue(run1.isCompleted)
 
-        coVerify(exactly = 0) { checkRepository.submit(any(), any(), any(), any(), any(), any(), any()) }
+        coVerify(exactly = 0) { checkRepository.submit(any(), any(), any(), any(), any(), any(), any(), any()) }
     }
 }

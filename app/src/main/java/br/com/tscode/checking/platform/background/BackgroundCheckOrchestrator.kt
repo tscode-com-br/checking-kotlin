@@ -50,6 +50,33 @@ enum class OrchestratorTrigger { TIMER, GEOFENCE, FOREGROUND }
 
 private enum class SkipDecision { RUN, SKIP, NO_FIX }
 
+// Fallback GPS accuracy gate used only when offline AND no options were ever cached (mirrors the UI's
+// `?: 30`). Online, the server's real threshold is always used; offline the reading is queued and the
+// server re-evaluates accuracy at replay, so a sane default is enough.
+internal const val DEFAULT_ACCURACY_THRESHOLD_METERS = 30
+
+// OFFLINE capture resilience (P8). The engine must NOT bail when it can't fetch LocationOptions offline:
+// options are only needed for the GPS accuracy gate and (online) the mixed-zone decision — neither is
+// reached offline, where the engine's only job is to capture the GPS fix and queue an offline Raw for
+// every movement / geofence transition. On a real connectivity loss (ApiError.Network) fall back to the
+// last known options (or defaults) and keep capturing; on anything else (Unauthorized → re-login,
+// HTTP/unknown) return null so the run bails. Without this, `getLocationOptions() ?: return` bailed once
+// the 15-min options cache expired, so only the transitions inside that first window were ever queued →
+// only the first offline activity synced and the real check-out time was lost (recorded live, at reconnect).
+internal fun offlineFallbackLocationOptions(
+    cached: LocationOptions?,
+    error: ApiError,
+): LocationOptions? =
+    if (error is ApiError.Network) {
+        cached ?: LocationOptions(
+            items = emptyList(),
+            accuracyThresholdMeters = DEFAULT_ACCURACY_THRESHOLD_METERS,
+            mixedZoneIntervalMinutes = 0,
+        )
+    } else {
+        null
+    }
+
 // The 7-step background check engine (§23.4, T3B.3).
 // Single-flight via a Mutex.  Acquires a wake lock for the duration of each burst.
 // Called by the FGS 15-min timer, GeofenceBroadcastReceiver, and CheckViewModel foreground path.
@@ -353,8 +380,9 @@ class BackgroundCheckOrchestrator @Inject constructor(
                 cachedOptionsAt = now
             }
             is AppResult.Failure -> {
+                // Session expired → mark so runOnce() can silently re-login and retry (then bail below).
                 if (r.error is ApiError.Unauthorized) isSessionExpired = true
-                null
+                offlineFallbackLocationOptions(cached, r.error)
             }
         }
     }

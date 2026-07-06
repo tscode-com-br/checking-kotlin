@@ -43,6 +43,7 @@ import br.com.tscode.checking.presentation.theme.Tokens
 @Composable
 fun SelfRegistrationDialog(
     fields: SelfRegistrationFields,
+    onChaveChanged: (String) -> Unit,
     onNomeChanged: (String) -> Unit,
     onEmailChanged: (String) -> Unit,
     onPasswordChanged: (String) -> Unit,
@@ -59,7 +60,7 @@ fun SelfRegistrationDialog(
         unfocusedBorderColor = CheckingInputBorder,
     )
 
-    DialogScaffold(onDismiss = onDismiss) {
+    DialogScaffold(onDismiss = onDismiss, dismissOnScrimTap = false) {
         // plan003 (decision 3) — top-left Back arrow returns to the main screen (e.g. if the user typed an
         // already-registered key by mistake). Reuses onDismiss (which also blocks the dialog auto-reopen).
         Row(
@@ -82,19 +83,23 @@ fun SelfRegistrationDialog(
 
         HorizontalDivider(color = CheckingDivider)
 
+        // plan003 (decision 3) — the key is seeded from the main screen but stays editable, so a user who
+        // typed the wrong key on the main screen can correct it here (mirrors the Check Web registration
+        // form). Sanitization/cap and the main-screen key sync live in the ViewModel (onRegChaveChanged).
         OutlinedTextField(
             value = fields.chave,
-            onValueChange = {},
+            onValueChange = onChaveChanged,
             label = { Text(t("registrationDialog.keyLabel", null)) },
-            readOnly = true,
             singleLine = true,
+            enabled = !fields.isBusy,
+            keyboardOptions = KeyboardOptions(
+                capitalization = KeyboardCapitalization.Characters,
+                keyboardType = KeyboardType.Text,
+                imeAction = ImeAction.Next,
+            ),
             modifier = Modifier.fillMaxWidth(),
             textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
-            colors = OutlinedTextFieldDefaults.colors(
-                unfocusedBorderColor = CheckingInputBorder,
-                focusedBorderColor = CheckingInputBorder,
-                disabledBorderColor = CheckingInputBorder,
-            ),
+            colors = inputColors,
         )
 
         OutlinedTextField(

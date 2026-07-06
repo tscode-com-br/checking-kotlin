@@ -239,7 +239,7 @@ class CheckViewModel @Inject constructor(
         if (pendingApprovalPollJob?.isActive == true) return
         pendingApprovalPollJob = viewModelScope.launch {
             while (_uiState.value.isAwaitingApproval && _uiState.value.chave == chave) {
-                delay(20_000L) // ~20s between approval re-checks
+                delay(10_000L) // ~10s between approval re-checks
                 if (_uiState.value.chave != chave || !_uiState.value.isAwaitingApproval) break
                 probeStatus(chave)
             }
@@ -862,6 +862,20 @@ class CheckViewModel @Inject constructor(
         }
     }
 
+    fun onRegChaveChanged(v: String) {
+        // plan003 (decision 3) — editable registration key (mirrors Check Web). Keep the main-screen chave
+        // in sync so submit, pending-approval polling and auto-login all act on the corrected key. No
+        // re-probe here — that path (onChaveChanged) would close this dialog; the server re-evaluates the
+        // key on submit anyway.
+        val sanitized = sanitizeSettingsChave(v)
+        _uiState.update {
+            it.copy(
+                chave = sanitized,
+                selfRegistrationFields = it.selfRegistrationFields.copy(chave = sanitized),
+            )
+        }
+    }
+
     fun onRegNomeChanged(v: String) =
         _uiState.update { it.copy(selfRegistrationFields = it.selfRegistrationFields.copy(nome = v)) }
 
@@ -1181,6 +1195,47 @@ class CheckViewModel @Inject constructor(
         _uiState.update { it.copy(dialogOpen = CheckDialog.AutoActivities, showAutoActivitiesNudge = false) }
     }
 
+    // LGPD art. 8º §2 (ônus da prova) — persists WHEN the user affirmatively accepted the background-location
+    // + international-transfer prominent disclosure, as evidence of specific, informed consent.
+    fun recordBackgroundLocationConsent() {
+        viewModelScope.launch {
+            appPreferences.setBackgroundLocationConsentAt(clock.now().toString())
+            activityLogger.logSystem("Background location consent granted by user.") // plan004
+        }
+    }
+
+    // LGPD art. 18 — "Remover Cadastro": delete the account on the server, then (only if the server
+    // actually removed it) wipe ALL local data and reset to the auth prompt. On a server refusal (409 —
+    // admin / accident opener / user in an open accident) the account still exists, so we keep the local
+    // session and surface a message pointing to the privacy channel instead of faking success.
+    fun deleteAccount() {
+        viewModelScope.launch {
+            val lang = _languageFlow.value
+            when (val result = authRepository.deleteAccount()) {
+                is AppResult.Success -> {
+                    runCatching { AutoActivityController.stop(appContext) }
+                    runCatching { activityLog.clear() }
+                    runCatching { securePasswordStore.clearAll() }
+                    runCatching { appPreferences.clearAll() }
+                    stopCheckStream()
+                    stopPendingApprovalPolling()
+                    _uiState.value = CheckUiState(isInitializing = false) // back to the chave-entry prompt
+                }
+                is AppResult.Failure -> {
+                    // 409 (blocked) maps to ApiError.Conflict — direct the user to the privacy channel.
+                    val message = if (result.error is ApiError.Conflict) {
+                        t("settings.deleteAccountBlocked", lang = lang)
+                    } else {
+                        t("settings.deleteAccountFailed", lang = lang)
+                    }
+                    _uiState.update {
+                        it.copy(notificationPrimary = message, notificationTone = NotificationTone.Error)
+                    }
+                }
+            }
+        }
+    }
+
     // P5: per-chave persisted dismissal flag for the first-login nudge (generic flag API — no schema change).
     private fun nudgeFlag(chave: String) = "auto_activities_prompt_dismissed_$chave"
 
@@ -1356,6 +1411,36 @@ class CheckViewModel @Inject constructor(
         }
     }
 
+    // Runs ONE normal (situation-engine) evaluation the instant automatic activities are enabled, so the
+    // routine acts NOW instead of waiting for the FGS's first 15-min timer tick or a geofence ENTER
+    // transition — the latter never fires when the user is already standing inside a location, which is
+    // exactly why a manual activity used to be needed first. Two reasons this is needed even though the
+    // FGS runs an evaluation on (fresh) start:
+    //   1) if the service was already running (re-enable / watchdog / boot) starting it is a no-op, so no
+    //      immediate evaluation would otherwise happen until the next 15-min tick;
+    //   2) the orchestrator writes only to the server + its own cache, never to uiState — so we refresh
+    //      the history here so any recorded check-in/out shows on screen immediately.
+    // FOREGROUND trigger bypasses the skip-if-unchanged gate; the situation engine still decides, so this
+    // records an activity only when one is actually warranted (no forced/spurious event, no duplicate —
+    // a same-location re-check-in is suppressed). Single-flight with the FGS via the orchestrator mutex.
+    private fun runImmediateAutoEvaluation() {
+        val chave = _uiState.value.chave
+        if (chave.length != 4) return
+        viewModelScope.launch {
+            orchestrator.runOnce(OrchestratorTrigger.FOREGROUND)
+            when (val refreshed = checkRepository.getState(chave)) {
+                is AppResult.Success -> _uiState.update {
+                    it.copy(
+                        historyState = refreshed.data,
+                        transportEnabled = refreshed.data.transportEnabled,
+                        selectedManualLocation = it.selectedManualLocation ?: refreshed.data.currentLocal,
+                    )
+                }
+                is AppResult.Failure -> Unit
+            }
+        }
+    }
+
     // Called when the user toggles the "Habilitar Atividades Automáticas" checkbox.
     // Persists the intent. On disable → stop the FGS. On enable → start NOW if permissions already
     // suffice; otherwise the dialog launches the permission ladder and onAutoActivitiesPermissionsGranted()
@@ -1369,6 +1454,9 @@ class CheckViewModel @Inject constructor(
             _uiState.update { it.copy(automaticActivitiesEnabled = enabled, autoActivitiesHealth = computeHealth(enabled, context), showAutoActivitiesNudge = if (enabled) false else it.showAutoActivitiesNudge) }
             if (enabled) {
                 ensureEngineRunningIfEligible(context)
+                // Evaluate immediately so the routine acts the moment it's enabled (only when permissions
+                // already suffice; otherwise the ladder → onAutoActivitiesPermissionsGranted handles it).
+                if (_uiState.value.locationPermissionSufficient) runImmediateAutoEvaluation()
                 activityLogger.logSystem("Automatic activities enabled by user.") // plan004
             } else {
                 AutoActivityController.stop(context)
@@ -1389,6 +1477,8 @@ class CheckViewModel @Inject constructor(
             // P5: auto-activities now on → the nudge is resolved.
             _uiState.update { it.copy(automaticActivitiesEnabled = true, autoActivitiesHealth = computeHealth(true, context), showAutoActivitiesNudge = false) }
             ensureEngineRunningIfEligible(context)
+            // Permissions just granted → evaluate immediately (same rationale as the toggle path).
+            if (_uiState.value.locationPermissionSufficient) runImmediateAutoEvaluation()
         }
     }
 

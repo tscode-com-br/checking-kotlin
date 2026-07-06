@@ -71,6 +71,6 @@ class OrchestratorToggleGateTest {
         assertEquals(EvaluationOutcome.TOGGLE_OFF, entry!!.outcome)
         // No GPS / engine / submit beyond the gate.
         coVerify(exactly = 0) { useCase(any(), any(), any(), any(), any()) }
-        coVerify(exactly = 0) { checkRepository.submit(any(), any(), any(), any(), any(), any(), any()) }
+        coVerify(exactly = 0) { checkRepository.submit(any(), any(), any(), any(), any(), any(), any(), any()) }
     }
 }

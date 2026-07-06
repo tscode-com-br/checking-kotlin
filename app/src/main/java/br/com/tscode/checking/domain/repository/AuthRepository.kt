@@ -8,6 +8,8 @@ interface AuthRepository {
     suspend fun getStatus(chave: String): AppResult<AuthStatus>
     suspend fun login(chave: String, password: String): AppResult<AuthStatus>
     suspend fun logout(): AppResult<Unit>
+    // LGPD art. 18 — self-delete the account on the server (session-authenticated).
+    suspend fun deleteAccount(): AppResult<Unit>
     suspend fun registerPassword(chave: String, project: String?, password: String): AppResult<AuthStatus>
     suspend fun changePassword(chave: String, oldPassword: String, newPassword: String): AppResult<AuthStatus>
     suspend fun selfRegister(

@@ -1,6 +1,8 @@
 package br.com.tscode.checking.presentation.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -10,6 +12,8 @@ import br.com.tscode.checking.presentation.about.AboutScreen
 import br.com.tscode.checking.presentation.check.CheckScreen
 import br.com.tscode.checking.presentation.manual.ManualScreen
 import br.com.tscode.checking.presentation.manual.ManualViewModel
+import br.com.tscode.checking.presentation.privacy.PrivacyScreen
+import br.com.tscode.checking.presentation.privacy.PrivacyViewModel
 import br.com.tscode.checking.presentation.splash.AppSplashScreen
 
 // Route identifiers (§15).
@@ -18,6 +22,7 @@ object Routes {
     const val CHECK = "check"
     const val MANUAL = "manual"
     const val ABOUT = "about"
+    const val PRIVACY = "privacy"
 }
 
 // Single-activity NavHost (§15).
@@ -44,6 +49,7 @@ fun CheckingNavHost() {
             CheckScreen(
                 onNavigateToManual = { navController.navigate(Routes.MANUAL) },
                 onNavigateToAbout = { navController.navigate(Routes.ABOUT) },
+                onNavigateToPrivacy = { navController.navigate(Routes.PRIVACY) },
             )
         }
         composable(Routes.MANUAL) {
@@ -60,6 +66,17 @@ fun CheckingNavHost() {
             val t = rememberT(manualVm.languageFlow)
             AboutScreen(
                 onBack = { navController.popBackStack() },
+                t = t,
+            )
+        }
+        composable(Routes.PRIVACY) {
+            val privacyVm: PrivacyViewModel = hiltViewModel()
+            val t = rememberT(privacyVm.languageFlow)
+            val chave by privacyVm.chaveFlow.collectAsState()
+            PrivacyScreen(
+                chave = chave,
+                onBack = { navController.popBackStack() },
+                onDeleteLocalData = { onDone -> privacyVm.deleteLocalData(onDone) },
                 t = t,
             )
         }

@@ -30,4 +30,9 @@ interface AuthApi {
 
     @POST("auth/change-password")
     suspend fun changePassword(@Body body: WebPasswordChangeRequest): WebPasswordActionResponse
+
+    // LGPD art. 18 — the authenticated user deletes their own account. Auth is the session cookie
+    // (sent automatically by the cookie jar), so there is no request body.
+    @POST("auth/delete-account")
+    suspend fun deleteAccount(): WebPasswordActionResponse
 }

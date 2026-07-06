@@ -113,6 +113,9 @@ class AccidentRepositoryImpl @Inject constructor(
             idempotencyKey = idempotencyKey.toRequestBody("text/plain".toMediaType()),
             video = videoPart,
         )
+        // LGPD art. 6º III (necessidade) / art. 46 (segurança): the local temp recording has served its
+        // purpose once uploaded — delete it instead of leaving it in cacheDir for OS eviction.
+        runCatching { videoFile.delete() }
         VideoUploadResult(
             videoId = r.videoId,
             publicUrl = r.publicUrl,

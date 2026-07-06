@@ -1,16 +1,13 @@
 package br.com.tscode.checking.platform.background.offline
 
 import android.content.Context
-import br.com.tscode.checking.data.local.AppPreferencesDataSource
 import br.com.tscode.checking.domain.offline.PendingCheckEvent
 import io.mockk.Runs
-import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
 import io.mockk.mockkObject
 import io.mockk.unmockkObject
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -24,15 +21,14 @@ import org.junit.Test
  */
 class OfflineCheckQueueTest {
 
-    // In-memory stand-in for the DataStore-backed pendingChecksJson preference.
-    private val store = MutableStateFlow("")
-    private val appPrefs = mockk<AppPreferencesDataSource> {
-        every { pendingChecksJson } returns store
-        // setPendingChecksJson returns Preferences (DataStore.edit), not Unit → return a relaxed mock.
-        coEvery { setPendingChecksJson(any()) } answers { store.value = firstArg(); mockk(relaxed = true) }
+    // In-memory stand-in for the encrypted offline-queue store (production uses EncryptedSharedPreferences).
+    private val store = object : OfflineQueueStore {
+        @Volatile var value = ""
+        override suspend fun read(): String = value
+        override suspend fun write(json: String) { value = json }
     }
     private val context = mockk<Context>(relaxed = true)
-    private val queue = OfflineCheckQueue(context, appPrefs)
+    private val queue = OfflineCheckQueue(context, store)
 
     @Before
     fun setup() {
@@ -79,7 +75,7 @@ class OfflineCheckQueueTest {
         queue.enqueue(raw("r", at = 100, lat = 1.2345))
         queue.enqueue(decided("d", at = 200))
         // A fresh queue over the same store reads them back (simulates a process restart).
-        val reopened = OfflineCheckQueue(context, appPrefs).peekAll()
+        val reopened = OfflineCheckQueue(context, store).peekAll()
         assertEquals(2, reopened.size)
         val r = reopened.first { it.clientEventId == "r" } as PendingCheckEvent.Raw
         assertEquals(1.2345, r.latitude, 0.0)

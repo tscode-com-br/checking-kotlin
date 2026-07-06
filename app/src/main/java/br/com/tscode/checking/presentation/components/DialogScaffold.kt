@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
@@ -29,6 +30,10 @@ import br.com.tscode.checking.presentation.theme.Tokens
 @Composable
 fun DialogScaffold(
     onDismiss: () -> Unit,
+    // When false, tapping the scrim (outside the card) does NOT dismiss — the dialog can only be
+    // closed via its own buttons. Used by the registration / set-password dialogs so an accidental
+    // tap outside doesn't discard typed data. The system Back gesture still cancels (see BackHandler).
+    dismissOnScrimTap: Boolean = true,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     BackHandler { onDismiss() }
@@ -37,10 +42,20 @@ fun DialogScaffold(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black.copy(alpha = 0.5f))
-            .clickable(
-                indication = null,
-                interactionSource = remember { MutableInteractionSource() },
-            ) { onDismiss() },
+            .then(
+                if (dismissOnScrimTap) {
+                    Modifier.clickable(
+                        indication = null,
+                        interactionSource = remember { MutableInteractionSource() },
+                    ) { onDismiss() }
+                } else {
+                    Modifier
+                },
+            )
+            // Inset the card above the on-screen keyboard so all fields and the footer buttons stay
+            // reachable via the card's own vertical scroll while the IME is shown (windowSoftInputMode
+            // = adjustResize + edge-to-edge feed the IME insets here).
+            .imePadding(),
         contentAlignment = Alignment.Center,
     ) {
         Card(

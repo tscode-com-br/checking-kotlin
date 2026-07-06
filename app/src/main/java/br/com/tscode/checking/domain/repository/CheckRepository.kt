@@ -22,7 +22,9 @@ interface CheckRepository {
     suspend fun matchLocation(lat: Double, lon: Double, accuracy: Double?): AppResult<LocationMatch>
     // eventTime/clientEventId default to "now"/a fresh UUID for live submits; the offline replay
     // (SyncPendingChecksWorker) passes the ORIGINAL capture time + id so the server records the
-    // event at the real-world time and dedups by client_event_id (P8).
+    // event at the real-world time and dedups by client_event_id (P8). fillForms defaults true; the
+    // replay passes false for events older than 24h relative to the newest queued activity so a
+    // multi-day offline backlog fills FORMS with only the most recent check-in/out.
     suspend fun submit(
         chave: String,
         projeto: String,
@@ -31,6 +33,7 @@ interface CheckRepository {
         informe: InformeType,
         eventTime: Instant? = null,
         clientEventId: String? = null,
+        fillForms: Boolean = true,
     ): AppResult<HistoryState>
     // Returns bounding circles for the user's project locations (Approach A, §23.2.2).
     // Result is cached for 1 h; callers that need fresh data after login/project change

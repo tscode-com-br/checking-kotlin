@@ -70,7 +70,7 @@ class PendingCheckReplayerTest {
     @Test
     fun decided_replays_verbatim_with_original_time_and_id() = runTest {
         pending.add(decided("d", at = 1000, action = "checkout", local = "Zona Mista"))
-        coEvery { checkRepository.submit(any(), any(), any(), any(), any(), any(), any()) } returns
+        coEvery { checkRepository.submit(any(), any(), any(), any(), any(), any(), any(), any()) } returns
             AppResult.Success(state(CheckAction.CHECKOUT))
 
         assertEquals(PendingCheckReplayer.DrainResult.COMPLETED, replayer.drain())
@@ -90,7 +90,7 @@ class PendingCheckReplayerTest {
             AppResult.Success(match(MatchStatus.MATCHED, "Unidade P80"))
         coEvery { checkRepository.getState(chave) } returns AppResult.Success(state(CheckAction.CHECKOUT))
         coEvery { checkRepository.getLocations() } returns AppResult.Success(options)
-        coEvery { checkRepository.submit(any(), any(), any(), any(), any(), any(), any()) } returns
+        coEvery { checkRepository.submit(any(), any(), any(), any(), any(), any(), any(), any()) } returns
             AppResult.Success(state(CheckAction.CHECKIN))
 
         assertEquals(PendingCheckReplayer.DrainResult.COMPLETED, replayer.drain())
@@ -113,7 +113,7 @@ class PendingCheckReplayerTest {
 
         assertEquals(PendingCheckReplayer.DrainResult.COMPLETED, replayer.drain())
         assertTrue(pending.isEmpty())
-        coVerify(exactly = 0) { checkRepository.submit(any(), any(), any(), any(), any(), any(), any()) }
+        coVerify(exactly = 0) { checkRepository.submit(any(), any(), any(), any(), any(), any(), any(), any()) }
     }
 
     @Test
@@ -127,7 +127,7 @@ class PendingCheckReplayerTest {
         coEvery { checkRepository.getState(chave) } returns
             AppResult.Success(state(CheckAction.CHECKIN).copy(currentLocal = "Unidade P80"))
         coEvery { checkRepository.getLocations() } returns AppResult.Success(options)
-        coEvery { checkRepository.submit(any(), any(), any(), any(), any(), any(), any()) } returns
+        coEvery { checkRepository.submit(any(), any(), any(), any(), any(), any(), any(), any()) } returns
             AppResult.Success(state(CheckAction.CHECKIN))
 
         assertEquals(PendingCheckReplayer.DrainResult.COMPLETED, replayer.drain())
@@ -143,7 +143,7 @@ class PendingCheckReplayerTest {
     @Test
     fun network_failure_retries_and_keeps_event() = runTest {
         pending.add(decided("d", at = 1000))
-        coEvery { checkRepository.submit(any(), any(), any(), any(), any(), any(), any()) } returns
+        coEvery { checkRepository.submit(any(), any(), any(), any(), any(), any(), any(), any()) } returns
             AppResult.Failure(ApiError.Network)
         assertEquals(PendingCheckReplayer.DrainResult.RETRY, replayer.drain())
         assertEquals(1, pending.size)
@@ -152,7 +152,7 @@ class PendingCheckReplayerTest {
     @Test
     fun http_4xx_drops_event() = runTest {
         pending.add(decided("d", at = 1000))
-        coEvery { checkRepository.submit(any(), any(), any(), any(), any(), any(), any()) } returns
+        coEvery { checkRepository.submit(any(), any(), any(), any(), any(), any(), any(), any()) } returns
             AppResult.Failure(ApiError.Http(422, "bad local"))
         assertEquals(PendingCheckReplayer.DrainResult.COMPLETED, replayer.drain())
         assertTrue(pending.isEmpty())
@@ -162,7 +162,7 @@ class PendingCheckReplayerTest {
     fun drain_logs_syncing_count_and_synced_on_success() = runTest {
         // plan004 — the drain logs the queued count, then a synced row for the replayed check-out.
         pending.add(decided("d", at = 1000, action = "checkout", local = "Zona Mista"))
-        coEvery { checkRepository.submit(any(), any(), any(), any(), any(), any(), any()) } returns
+        coEvery { checkRepository.submit(any(), any(), any(), any(), any(), any(), any(), any()) } returns
             AppResult.Success(state(CheckAction.CHECKOUT))
 
         replayer.drain()
@@ -175,7 +175,7 @@ class PendingCheckReplayerTest {
     fun drain_logs_dropped_on_permanent_4xx() = runTest {
         // plan004 — a permanently-dropped queued event (422) is logged as a dropped sync.
         pending.add(decided("d", at = 1000, action = "checkin", local = "Unidade P80"))
-        coEvery { checkRepository.submit(any(), any(), any(), any(), any(), any(), any()) } returns
+        coEvery { checkRepository.submit(any(), any(), any(), any(), any(), any(), any(), any()) } returns
             AppResult.Failure(ApiError.Http(422, "bad local"))
 
         replayer.drain()
@@ -186,7 +186,7 @@ class PendingCheckReplayerTest {
     @Test
     fun http_5xx_retries_and_keeps_event() = runTest {
         pending.add(decided("d", at = 1000))
-        coEvery { checkRepository.submit(any(), any(), any(), any(), any(), any(), any()) } returns
+        coEvery { checkRepository.submit(any(), any(), any(), any(), any(), any(), any(), any()) } returns
             AppResult.Failure(ApiError.Http(503, "service unavailable"))
         // Transient server error must NOT lose the event — keep it for a later retry.
         assertEquals(PendingCheckReplayer.DrainResult.RETRY, replayer.drain())
@@ -198,12 +198,31 @@ class PendingCheckReplayerTest {
         pending.add(decided("late", at = 2000))
         pending.add(decided("early", at = 1000))
         val order = mutableListOf<String>()
-        coEvery { checkRepository.submit(any(), any(), any(), any(), any(), any(), any()) } answers {
+        coEvery { checkRepository.submit(any(), any(), any(), any(), any(), any(), any(), any()) } answers {
             // arg(6) = clientEventId; avoid lastArg() — on a suspend fun it is the Continuation.
             order.add(arg(6))
             AppResult.Success(state(CheckAction.CHECKOUT))
         }
         replayer.drain()
         assertEquals(listOf("early", "late"), order)
+    }
+
+    @Test
+    fun multi_day_backlog_fills_forms_only_within_24h_of_newest() = runTest {
+        // 24h FORMS window: a multi-day offline backlog replays every event (all recorded server-side at
+        // their real time), but only events within 24h of the NEWEST queued activity fill FORMS. The old
+        // (day-1) event submits fill_forms=false; the recent (day-3, newest) event submits fill_forms=true.
+        val dayMs = 24L * 60 * 60 * 1000
+        pending.add(decided("stale", at = 0L, action = "checkin", local = "Unidade P80"))
+        pending.add(decided("recent", at = 2 * dayMs + 1000, action = "checkin", local = "Unidade P80"))
+        val fillByEvent = mutableMapOf<String, Boolean>()
+        coEvery { checkRepository.submit(any(), any(), any(), any(), any(), any(), any(), any()) } answers {
+            fillByEvent[arg(6)] = arg(7) // clientEventId (arg 6) → fillForms (arg 7)
+            AppResult.Success(state(CheckAction.CHECKIN))
+        }
+
+        assertEquals(PendingCheckReplayer.DrainResult.COMPLETED, replayer.drain())
+        assertEquals(false, fillByEvent["stale"]) // >24h before the newest → no FORMS fill
+        assertEquals(true, fillByEvent["recent"]) // the newest activity → FORMS fill
     }
 }
