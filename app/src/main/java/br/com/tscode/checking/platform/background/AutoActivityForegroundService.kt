@@ -4,7 +4,10 @@ import android.app.AlarmManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
+import android.content.pm.ServiceInfo
+import android.os.Build
 import android.os.IBinder
+import androidx.core.app.ServiceCompat
 import br.com.tscode.checking.data.local.AppPreferencesDataSource
 import br.com.tscode.checking.i18n.resolveEffectiveLanguageCode
 import br.com.tscode.checking.platform.activitylog.ActivityLogger
@@ -42,25 +45,103 @@ class AutoActivityForegroundService : Service() {
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var timerJob: Job? = null
+    private var isPromotedToForeground = false
 
     override fun onCreate() {
         super.onCreate()
-        isRunning = true
-        activityLogger.logActive("Background service started.") // plan004 — engine awake
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
-            stopSelf()
+            stopSelfResult(startId)
             return START_NOT_STICKY
         }
-        // startForeground() must be called quickly — use a device-locale guess (no DataStore read),
-        // then refine once the persisted language is read. Both follow the same stored→device→pt rule
-        // the UI uses, so the service notification matches the user's language instead of forcing pt.
-        startForeground(
-            AutoActivityNotifications.NOTIFICATION_ID_SERVICE,
-            AutoActivityNotifications.buildServiceNotification(this, isPaused = false, lang = resolveEffectiveLanguageCode(null)),
-        )
+
+        if (!isPromotedToForeground) {
+            val origin =
+                if (scheduledPauseTriggerForServiceAction(intent?.action) != null) {
+                    // The exact-alarm action is already an unambiguous, backwards-compatible
+                    // identifier. Older PendingIntents therefore remain safe after an app update.
+                    AutoActivityServiceStartOrigin.SCHEDULED_PAUSE
+                } else {
+                    AutoActivityServiceStartOrigin.fromWireValue(
+                        intent?.getStringExtra(EXTRA_AUTO_ACTIVITY_START_ORIGIN),
+                    )
+                }
+            val prerequisites = inspectAutoActivityServicePrerequisites(this)
+            val blockReason =
+                autoActivityServiceStartBlockReason(
+                    prerequisites = prerequisites,
+                    origin = origin,
+                )
+            if (shouldWarnBackgroundLocationRequired(prerequisites, origin)) {
+                AutoActivityNotifications.postBackgroundLocationRequiredNotification(
+                    this,
+                    resolveEffectiveLanguageCode(null),
+                )
+            } else if (prerequisites.backgroundLocationGranted) {
+                AutoActivityNotifications.cancelBackgroundLocationRequiredNotification(this)
+            }
+            if (blockReason != null) {
+                return rejectStart(
+                    startId = startId,
+                    logMessage = "Background service start deferred: ${blockReason.name}.",
+                )
+            }
+
+            // Promote immediately, before DataStore/GPS/network work. The notification uses a
+            // device-locale guess first and is refined asynchronously from the persisted language.
+            val promotion =
+                attemptAutoActivityForegroundPromotion {
+                    val serviceType =
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                            ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+                        } else {
+                            0
+                        }
+                    ServiceCompat.startForeground(
+                        this,
+                        AutoActivityNotifications.NOTIFICATION_ID_SERVICE,
+                        AutoActivityNotifications.buildServiceNotification(
+                            this,
+                            isPaused = false,
+                            lang = resolveEffectiveLanguageCode(null),
+                        ),
+                        serviceType,
+                    )
+                }
+            if (promotion is AutoActivityForegroundPromotion.Rejected) {
+                val latestPrerequisites = inspectAutoActivityServicePrerequisites(this)
+                if (
+                    promotion.cause is SecurityException &&
+                    latestPrerequisites.sdkInt >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE &&
+                    latestPrerequisites.fineLocationGranted &&
+                    latestPrerequisites.locationEnabled &&
+                    !latestPrerequisites.backgroundLocationGranted
+                ) {
+                    AutoActivityNotifications.postBackgroundLocationRequiredNotification(
+                        this,
+                        resolveEffectiveLanguageCode(null),
+                    )
+                }
+                return rejectStart(
+                    startId = startId,
+                    logMessage =
+                        "Background service promotion rejected: " +
+                            "${promotion.cause.javaClass.simpleName}.",
+                )
+            }
+
+            // This flag must represent a service that actually entered foreground state. Setting it
+            // in onCreate() creates a false-positive window when Android rejects startForeground().
+            isPromotedToForeground = true
+            isRunning = true
+            if (prerequisites.backgroundLocationGranted) {
+                AutoActivityNotifications.cancelBackgroundLocationRequiredNotification(this)
+            }
+            activityLogger.logActive("Background service started.") // plan004 — engine awake
+        }
+
         scope.launch {
             val lang = resolveEffectiveLanguageCode(appPrefs.language.first())
             updateNotification(isPaused = false, lang = lang)
@@ -92,8 +173,12 @@ class AutoActivityForegroundService : Service() {
     }
 
     override fun onDestroy() {
+        val wasRunning = isPromotedToForeground
+        isPromotedToForeground = false
         isRunning = false
-        activityLogger.logInactive("Background service stopped.") // plan004 — engine asleep
+        if (wasRunning) {
+            activityLogger.logInactive("Background service stopped.") // plan004 — engine asleep
+        }
         scope.cancel()
         super.onDestroy()
     }
@@ -101,16 +186,47 @@ class AutoActivityForegroundService : Service() {
     // Best-effort restart when the user swipes the app from recents.
     // The WorkManager backstop (T3B.8) is the authoritative restart mechanism.
     override fun onTaskRemoved(rootIntent: Intent?) {
-        val restartIntent = Intent(applicationContext, AutoActivityForegroundService::class.java)
-        val pendingIntent = PendingIntent.getService(
-            applicationContext, 0, restartIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
-        (getSystemService(ALARM_SERVICE) as AlarmManager).setAndAllowWhileIdle(
-            AlarmManager.ELAPSED_REALTIME,
-            android.os.SystemClock.elapsedRealtime() + RESTART_DELAY_MS,
-            pendingIntent,
-        )
+        val prerequisites = inspectAutoActivityServicePrerequisites(applicationContext)
+        if (
+            shouldWarnBackgroundLocationRequired(
+                prerequisites,
+                AutoActivityServiceStartOrigin.TASK_REMOVED,
+            )
+        ) {
+            AutoActivityNotifications.postBackgroundLocationRequiredNotification(
+                applicationContext,
+                resolveEffectiveLanguageCode(null),
+            )
+        }
+        val restartBlockReason =
+            autoActivityServiceStartBlockReason(
+                prerequisites = prerequisites,
+                origin = AutoActivityServiceStartOrigin.TASK_REMOVED,
+            )
+        if (restartBlockReason == null) {
+            val restartIntent =
+                Intent(applicationContext, AutoActivityForegroundService::class.java)
+                    .putExtra(
+                        EXTRA_AUTO_ACTIVITY_START_ORIGIN,
+                        AutoActivityServiceStartOrigin.TASK_REMOVED.wireValue,
+                    )
+            val pendingIntent =
+                PendingIntent.getService(
+                    applicationContext,
+                    0,
+                    restartIntent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                )
+            (getSystemService(ALARM_SERVICE) as AlarmManager).setAndAllowWhileIdle(
+                AlarmManager.ELAPSED_REALTIME,
+                android.os.SystemClock.elapsedRealtime() + RESTART_DELAY_MS,
+                pendingIntent,
+            )
+        } else {
+            activityLogger.logWarning(
+                "Task-removal service restart deferred: ${restartBlockReason.name}.",
+            )
+        }
         super.onTaskRemoved(rootIntent)
     }
 
@@ -119,6 +235,17 @@ class AutoActivityForegroundService : Service() {
     // Called when the pause state changes (pause active/inactive).
     fun updateNotification(isPaused: Boolean, lang: String) {
         AutoActivityNotifications.updateServiceNotification(this, isPaused, lang)
+    }
+
+    private fun rejectStart(
+        startId: Int,
+        logMessage: String,
+    ): Int {
+        isPromotedToForeground = false
+        isRunning = false
+        activityLogger.logWarning(logMessage)
+        stopSelfResult(startId)
+        return START_NOT_STICKY
     }
 
     companion object {

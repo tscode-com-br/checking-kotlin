@@ -29,8 +29,22 @@ class AutoActivityWatchdogWorker @AssistedInject constructor(
     override suspend fun doWork(): Result {
         // Restart the FGS if it was killed by the OS.
         if (!AutoActivityForegroundService.isRunning) {
-            AutoActivityController.start(applicationContext)
-            activityLogger.logSystem("Watchdog restarted the background service.", ActivitySeverity.WARNING) // plan004
+            val startResult =
+                AutoActivityController.start(
+                    applicationContext,
+                    AutoActivityServiceStartOrigin.WATCHDOG,
+                )
+            if (startResult == AutoActivityServiceStartResult.REQUESTED) {
+                activityLogger.logSystem(
+                    "Watchdog requested a background service restart.",
+                    ActivitySeverity.WARNING,
+                )
+            } else {
+                activityLogger.logSystem(
+                    "Watchdog deferred the background service restart ($startResult).",
+                    ActivitySeverity.WARNING,
+                )
+            }
         } else {
             activityLogger.logSystem("Watchdog check: service healthy.") // plan004
         }

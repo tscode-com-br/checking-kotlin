@@ -573,6 +573,10 @@ fun enDictionary(): Map<String, Any> = d(
         "automaticActivityTitle" to "Automatic activity - Failed!",
         "body" to "Low accuracy. Will try again.",
     ),
+    "backgroundLocationRestart" to d(
+        "title" to "Automatic activities need attention",
+        "body" to "For reliable background operation, open Checking and allow location access 'all the time'.",
+    ),
     "autoActivities" to d(
         "title" to "Automatic Activities",
         "subtitle" to "Enable background automatic check-in/check-out",

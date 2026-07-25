@@ -644,6 +644,10 @@ fun ptDictionary(): Map<String, Any> = d(
         "automaticActivityTitle" to "Atividade automática - Falha!",
         "body" to "Baixa Precisão. Tentará novamente.",
     ),
+    "backgroundLocationRestart" to d(
+        "title" to "Atividades automáticas precisam de atenção",
+        "body" to "Para funcionar corretamente em segundo plano, abra o Checking e permita a localização 'o tempo todo'.",
+    ),
     "autoActivities" to d(
         "title" to "Atividades Automáticas",
         "explanation" to "Se habilitada, esta opção permite que o Checking realize atividades de check-in e check-out em segundo plano, sem aviso prévio, com base na localização do usuário. É importante lembrar que, em momento algum, as coordenadas GPS obtidas são compartilhadas com terceiros, servindo apenas para identificar se o usuário encontra-se dentro de alguma localização cadastrada para o seu projeto.",

@@ -502,6 +502,10 @@ fun idDictionary(): Map<String, Any> = d(
         "automaticActivityTitle" to "Aktivitas otomatis - Gagal!",
         "body" to "Akurasi rendah. Akan mencoba lagi.",
     ),
+    "backgroundLocationRestart" to d(
+        "title" to "Aktivitas otomatis memerlukan perhatian",
+        "body" to "Agar berfungsi dengan baik di latar belakang, buka Checking dan izinkan akses lokasi 'sepanjang waktu'.",
+    ),
     "instructions" to d(
         "heading" to "Petunjuk",
         "intro" to "Panduan ini menunjukkan, langkah demi langkah, cara menggunakan Checking: mencatat kehadiran secara manual, mengaktifkan Mode Otomatis (check-in dan check-out berdasarkan lokasi) dan mengatur Jeda Terjadwal.",

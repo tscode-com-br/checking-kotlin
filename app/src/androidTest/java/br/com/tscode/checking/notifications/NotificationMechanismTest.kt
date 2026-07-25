@@ -180,6 +180,23 @@ class NotificationMechanismTest {
         awaitInactive(AutoActivityNotifications.NOTIFICATION_ID_LOW_ACCURACY)
     }
 
+    @Test
+    fun backgroundLocationRestartWarning_isCoalescedWithClearPortugueseText() {
+        AutoActivityNotifications.cancelBackgroundLocationRequiredNotification(context)
+        repeat(2) {
+            AutoActivityNotifications.postBackgroundLocationRequiredNotification(context, "pt")
+        }
+
+        val id = AutoActivityNotifications.NOTIFICATION_ID_BACKGROUND_LOCATION
+        val notification = awaitActive(id)
+        assertEquals("Atividades automáticas precisam de atenção", notification.title())
+        assertEquals(
+            "Para funcionar corretamente em segundo plano, abra o Checking e permita a localização 'o tempo todo'.",
+            notification.body(),
+        )
+        assertEquals(1, nm.activeNotifications.count { it.id == id })
+    }
+
     // i18n proof: the same accident push in English must differ from the Portuguese text.
     @Test
     fun accidentNotification_localizesByLanguage() {

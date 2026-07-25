@@ -502,6 +502,10 @@ fun zhDictionary(): Map<String, Any> = d(
         "automaticActivityTitle" to "自动活动 - 失败！",
         "body" to "定位精度低。将再次尝试。",
     ),
+    "backgroundLocationRestart" to d(
+        "title" to "自动活动需要处理",
+        "body" to "为确保后台功能正常运行，请打开 Checking，并将定位权限设为“始终允许”。",
+    ),
     "instructions" to d(
         "heading" to "使用说明",
         "intro" to "本指南将一步步说明如何使用 Checking：手动登记考勤、开启自动模式（根据位置自动签到和签退）以及设置计划暂停。",

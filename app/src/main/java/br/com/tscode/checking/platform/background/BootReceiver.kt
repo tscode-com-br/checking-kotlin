@@ -6,6 +6,7 @@ import android.content.Intent
 import br.com.tscode.checking.data.local.AppPreferencesDataSource
 import br.com.tscode.checking.domain.clientstate.resolvePersistedUserSettings
 import br.com.tscode.checking.domain.clientstate.UserSettings
+import br.com.tscode.checking.domain.model.ActivitySeverity
 import br.com.tscode.checking.platform.activitylog.ActivityLogger
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
@@ -48,8 +49,19 @@ class BootReceiver : BroadcastReceiver() {
 
                 // Start FGS + enqueue WorkManager watchdog (via the single entry point).
                 // The FGS registers geofences in its onStartCommand launch block (T3B.9).
-                AutoActivityController.start(context)
-                activityLogger.logSystem("Device rebooted — Checking re-armed.") // plan004
+                val startResult =
+                    AutoActivityController.start(
+                        context,
+                        AutoActivityServiceStartOrigin.BOOT,
+                    )
+                if (startResult == AutoActivityServiceStartResult.REQUESTED) {
+                    activityLogger.logSystem("Device rebooted — Checking re-armed.") // plan004
+                } else {
+                    activityLogger.logSystem(
+                        "Device rebooted — background service restart deferred ($startResult).",
+                        ActivitySeverity.WARNING,
+                    )
+                }
             } finally {
                 pendingResult.finish()
             }

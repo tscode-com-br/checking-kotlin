@@ -37,7 +37,10 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
 
         // Ensure the FGS is alive so subsequent timer ticks keep running.
         if (!AutoActivityForegroundService.isRunning) {
-            AutoActivityController.start(context)
+            AutoActivityController.start(
+                context,
+                AutoActivityServiceStartOrigin.GEOFENCE,
+            )
         }
 
         val pendingResult = goAsync()

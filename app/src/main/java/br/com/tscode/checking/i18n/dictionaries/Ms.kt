@@ -502,6 +502,10 @@ fun msDictionary(): Map<String, Any> = d(
         "automaticActivityTitle" to "Aktiviti automatik - Gagal!",
         "body" to "Ketepatan rendah. Akan mencuba lagi.",
     ),
+    "backgroundLocationRestart" to d(
+        "title" to "Aktiviti automatik memerlukan perhatian",
+        "body" to "Untuk berfungsi dengan betul di latar belakang, buka Checking dan benarkan akses lokasi 'sepanjang masa'.",
+    ),
     "instructions" to d(
         "heading" to "Arahan",
         "intro" to "Panduan ini menunjukkan, langkah demi langkah, cara menggunakan Checking: merekod kehadiran secara manual, menghidupkan Mod Automatik (check-in dan check-out mengikut lokasi) dan menetapkan Jeda Berjadual.",

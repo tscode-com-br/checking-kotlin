@@ -502,6 +502,10 @@ fun tlDictionary(): Map<String, Any> = d(
         "automaticActivityTitle" to "Awtomatikong aktibidad - Nabigo!",
         "body" to "Mababa ang katumpakan. Susubukan muli.",
     ),
+    "backgroundLocationRestart" to d(
+        "title" to "Kailangang suriin ang mga awtomatikong aktibidad",
+        "body" to "Para gumana nang maayos sa background, buksan ang Checking at payagan ang access sa lokasyon 'sa lahat ng oras'.",
+    ),
     "instructions" to d(
         "heading" to "Mga Tagubilin",
         "intro" to "Ipinapakita ng gabay na ito, hakbang-hakbang, kung paano gamitin ang Checking: mag-record ng attendance nang manu-mano, i-on ang Awtomatikong Mode (check-in at check-out ayon sa lokasyon) at i-set up ang Naka-iskedyul na Pause.",

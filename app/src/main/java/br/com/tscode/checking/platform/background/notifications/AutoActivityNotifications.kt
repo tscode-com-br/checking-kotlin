@@ -6,17 +6,20 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
 import br.com.tscode.checking.CheckingApp
 import br.com.tscode.checking.MainActivity
 import br.com.tscode.checking.R
 import br.com.tscode.checking.domain.model.CheckAction
 import br.com.tscode.checking.i18n.t
+import java.util.concurrent.atomic.AtomicBoolean
 
 // Central helper for all background automatic-activities notifications (§23.9, T3B.6).
-// Three notification types:
+// Background notification types include:
 //   1. Ongoing service notification — low-importance, non-dismissible (FGS requirement).
 //   2. Activity-performed event — check-in/check-out result, auto-cancels.
 //   3. Reauth needed — session expired while backgrounded, tapping opens the app.
+//   4. Background-location reminder — a coalesced warning when Android cannot restart the FGS.
 //
 // buildServiceNotification() returns a Notification for startForeground().
 // updateServiceNotification() / postActivityNotification() / postReauthNotification() post directly.
@@ -28,6 +31,7 @@ object AutoActivityNotifications {
     const val NOTIFICATION_ID_PAUSE = 1004
     const val NOTIFICATION_ID_ACCIDENT = 1005
     const val NOTIFICATION_ID_LOW_ACCURACY = 1006
+    const val NOTIFICATION_ID_BACKGROUND_LOCATION = 1007
 
     private const val REQUEST_CODE_TAP = 2000
     private const val REQUEST_CODE_EVENT = 2001
@@ -35,6 +39,9 @@ object AutoActivityNotifications {
     private const val REQUEST_CODE_PAUSE = 2003
     private const val REQUEST_CODE_ACCIDENT = 2004
     private const val REQUEST_CODE_LOW_ACCURACY = 2005
+    private const val REQUEST_CODE_BACKGROUND_LOCATION = 2006
+
+    private val backgroundLocationWarningPostedThisProcess = AtomicBoolean(false)
 
     // ─── Service notification ────────────────────────────────────────────────
 
@@ -123,6 +130,52 @@ object AutoActivityNotifications {
 
     fun cancelLowAccuracyRetryNotification(context: Context) {
         notificationManager(context).cancel(NOTIFICATION_ID_LOW_ACCURACY)
+    }
+
+    // ─── Background-location restart warning ─────────────────────────────────
+
+    /**
+     * Warns that the automatic engine lacks reliable background-location access.
+     *
+     * A stable id coalesces boot/geofence/watchdog attempts. The process guard prevents a dismissed
+     * notification from being recreated every 15 minutes; a new process/restart may remind once
+     * again. Posting is best-effort because the user may also have revoked POST_NOTIFICATIONS.
+     */
+    fun postBackgroundLocationRequiredNotification(
+        context: Context,
+        lang: String,
+    ) {
+        val manager = NotificationManagerCompat.from(context)
+        if (!manager.areNotificationsEnabled()) return
+        if (!backgroundLocationWarningPostedThisProcess.compareAndSet(false, true)) return
+
+        val body = t("backgroundLocationRestart.body", lang = lang)
+        val notification =
+            NotificationCompat.Builder(context, CheckingApp.CHANNEL_ID_EVENTS)
+                .setContentTitle(t("backgroundLocationRestart.title", lang = lang))
+                .setContentText(body)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+                .setSmallIcon(R.drawable.ic_launcher_foreground)
+                .setContentIntent(tapPendingIntent(context, REQUEST_CODE_BACKGROUND_LOCATION))
+                .setCategory(NotificationCompat.CATEGORY_REMINDER)
+                .setOnlyAlertOnce(true)
+                .setAutoCancel(true)
+                .build()
+        val posted =
+            runCatching {
+                notificationManager(context).notify(
+                    NOTIFICATION_ID_BACKGROUND_LOCATION,
+                    notification,
+                )
+            }.isSuccess
+        if (!posted) backgroundLocationWarningPostedThisProcess.set(false)
+    }
+
+    fun cancelBackgroundLocationRequiredNotification(context: Context) {
+        backgroundLocationWarningPostedThisProcess.set(false)
+        runCatching {
+            notificationManager(context).cancel(NOTIFICATION_ID_BACKGROUND_LOCATION)
+        }
     }
 
     // Shared builder for the simple "brand title + message" event notifications.

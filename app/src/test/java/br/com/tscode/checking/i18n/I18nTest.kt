@@ -220,6 +220,59 @@ class I18nTest {
         }
     }
 
+    @Test
+    fun backgroundLocationRestartNotification_isLocalizedInAllSixLanguages() {
+        val expected =
+            mapOf(
+                "pt" to
+                    listOf(
+                        "Atividades automáticas precisam de atenção",
+                        "Para funcionar corretamente em segundo plano, abra o Checking e " +
+                            "permita a localização 'o tempo todo'.",
+                    ),
+                "en" to
+                    listOf(
+                        "Automatic activities need attention",
+                        "For reliable background operation, open Checking and allow location " +
+                            "access 'all the time'.",
+                    ),
+                "id" to
+                    listOf(
+                        "Aktivitas otomatis memerlukan perhatian",
+                        "Agar berfungsi dengan baik di latar belakang, buka Checking dan " +
+                            "izinkan akses lokasi 'sepanjang waktu'.",
+                    ),
+                "ms" to
+                    listOf(
+                        "Aktiviti automatik memerlukan perhatian",
+                        "Untuk berfungsi dengan betul di latar belakang, buka Checking dan " +
+                            "benarkan akses lokasi 'sepanjang masa'.",
+                    ),
+                "tl" to
+                    listOf(
+                        "Kailangang suriin ang mga awtomatikong aktibidad",
+                        "Para gumana nang maayos sa background, buksan ang Checking at payagan " +
+                            "ang access sa lokasyon 'sa lahat ng oras'.",
+                    ),
+                "zh" to
+                    listOf(
+                        "自动活动需要处理",
+                        "为确保后台功能正常运行，请打开 Checking，并将定位权限设为“始终允许”。",
+                    ),
+            )
+        val keys =
+            listOf(
+                "backgroundLocationRestart.title",
+                "backgroundLocationRestart.body",
+            )
+
+        expected.forEach { (lang, values) ->
+            keys.zip(values).forEach { (key, value) ->
+                assertEquals("$key for $lang", value, t(key, lang = lang))
+            }
+        }
+    }
+
     // ── U2 regression guard: a manual section title must NEVER carry its own number prefix ────────────
     // ManualScreen.ManualSection renders the number once (the bold `index`); if a title also began with
     // "N. " it would reproduce the old "N. N." double-numbering. Guard all 16 sections × 6 languages.

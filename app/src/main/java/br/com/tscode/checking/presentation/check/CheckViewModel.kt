@@ -28,6 +28,7 @@ import br.com.tscode.checking.domain.usecase.CaptureLocationUseCase
 import br.com.tscode.checking.domain.usecase.LocationCaptureResult
 import br.com.tscode.checking.platform.activitylog.ActivityLogger
 import br.com.tscode.checking.platform.background.AutoActivityController
+import br.com.tscode.checking.platform.background.AutoActivityServiceStartOrigin
 import br.com.tscode.checking.platform.background.BackgroundCheckOrchestrator
 import br.com.tscode.checking.platform.background.OrchestratorTrigger
 import br.com.tscode.checking.platform.background.permissions.PermissionLadder
@@ -596,7 +597,9 @@ class CheckViewModel @Inject constructor(
         // so turn it off. Background ("Allow all the time") is only RECOMMENDED: losing it must NOT
         // disable the engine (only reduces background reliability). "Sufficient" mirrors the start
         // minimum (notifications + fine), read live so the UI/dialog reflect the real state.
-        // (backgroundGranted is kept in the signature for the screen contract / future use.)
+        if (backgroundGranted) {
+            AutoActivityController.clearBackgroundLocationWarning(context)
+        }
         val status = PermissionLadder.checkStatus(context)
         val minimumOk = status.minimumToStartGranted
         val wasEnabled = _uiState.value.automaticActivitiesEnabled
@@ -1746,7 +1749,10 @@ class CheckViewModel @Inject constructor(
         _uiState.update { it.copy(locationPermissionSufficient = minimumOk) }
         if (!minimumOk) return
         if (!AutoActivityController.isRunning() || refreshGeofences) {
-            AutoActivityController.start(context)
+            AutoActivityController.start(
+                context,
+                AutoActivityServiceStartOrigin.USER_VISIBLE,
+            )
         }
     }
 
