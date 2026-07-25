@@ -17,7 +17,7 @@ import javax.inject.Inject
 
 // Restores the background engine after device reboot or app update (§23.3-4, T3B.8).
 // Handles BOOT_COMPLETED (device restarted) and MY_PACKAGE_REPLACED (app updated).
-// Conditions to restart: chave is persisted AND automatic activities is enabled.
+// Conditions to restart: chave and an active project are persisted AND automatic activities is enabled.
 @AndroidEntryPoint
 class BootReceiver : BroadcastReceiver() {
 
@@ -43,7 +43,8 @@ class BootReceiver : BroadcastReceiver() {
                     settingsJson.decodeFromString<Map<String, UserSettings?>>(json)
                 }.getOrElse { emptyMap() }
 
-                if (!resolvePersistedUserSettings(settingsMap, chave).automaticActivitiesEnabled) return@launch
+                val settings = resolvePersistedUserSettings(settingsMap, chave)
+                if (!settings.automaticActivitiesEnabled || settings.activeProject.isEmpty()) return@launch
 
                 // Start FGS + enqueue WorkManager watchdog (via the single entry point).
                 // The FGS registers geofences in its onStartCommand launch block (T3B.9).

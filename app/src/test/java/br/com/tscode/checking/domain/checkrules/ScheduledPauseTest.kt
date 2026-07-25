@@ -242,6 +242,37 @@ class ScheduledPauseTest {
         assertEquals(expected, nextResumeInstant(now, s))
     }
 
+    // --- currentPauseStartInstant: persisted occurrence identity ---
+
+    @Test fun `current pause start - overnight morning belongs to previous evening occurrence`() {
+        val s = settings(enabled = true, from = "22:00", to = "06:00")
+
+        assertEquals(monAt(22, 0).toInstant(), currentPauseStartInstant(tueAt(2, 0), s))
+    }
+
+    @Test fun `current pause start - overlapping weekend keeps original Friday window start`() {
+        val s = settings(
+            enabled = true,
+            from = "22:00",
+            to = "06:00",
+            suspendSat = true,
+            suspendSun = true,
+        )
+        val fridayStart = at(2024, 1, 12, 22, 0)
+
+        assertEquals(fridayStart.toInstant(), currentPauseStartInstant(sunAt(12, 0), s))
+    }
+
+    @Test fun `current pause start - spring forward nonexistent configured time uses real transition`() {
+        val newYork = ZoneId.of("America/New_York")
+        val now = ZonedDateTime.of(2024, 3, 10, 3, 15, 0, 0, newYork)
+        val expectedRealTransition =
+            ZonedDateTime.of(2024, 3, 10, 3, 0, 0, 0, newYork).toInstant()
+        val s = settings(enabled = true, from = "02:30", to = "04:00")
+
+        assertEquals(expectedRealTransition, currentPauseStartInstant(now, s))
+    }
+
     // --- Helper ---
 
     private fun settings(

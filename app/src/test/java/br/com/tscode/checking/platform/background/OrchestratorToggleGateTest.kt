@@ -18,6 +18,9 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -50,6 +53,7 @@ class OrchestratorToggleGateTest {
         context, appPrefs, checkRepository, useCase, locationProvider, clock,
         authRepository, securePasswordStore, accidentRepository,
         mockk(relaxed = true),
+        CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
     )
 
     @Test

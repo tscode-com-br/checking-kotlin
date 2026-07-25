@@ -361,7 +361,9 @@ fun CheckScreen(
                             ProjectsFieldset(
                                 catalog = state.mainProjectCatalog,
                                 memberships = state.userProjects?.projects ?: emptyList(),
-                                isLoading = state.isProjectsLoading,
+                                // Only the initial GET blocks interaction. During a PUT the
+                                // ViewModel shows the optimistic selection and coalesces more taps.
+                                isLoading = state.isProjectsLoading && state.userProjects == null,
                                 onMembershipToggled = vm::onProjectMembershipToggled,
                                 t = t,
                             )

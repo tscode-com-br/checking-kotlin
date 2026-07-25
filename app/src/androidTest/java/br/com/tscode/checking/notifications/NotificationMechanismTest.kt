@@ -89,6 +89,14 @@ class NotificationMechanismTest {
         )
     }
 
+    private fun awaitInactive(id: Int) {
+        repeat(40) {
+            if (nm.activeNotifications.none { it.id == id }) return
+            Thread.sleep(50)
+        }
+        throw AssertionError("Notification id=$id remained active")
+    }
+
     private fun Notification.title(): String? =
         extras.getCharSequence(Notification.EXTRA_TITLE)?.toString()
 
@@ -143,6 +151,33 @@ class NotificationMechanismTest {
         AutoActivityNotifications.postReauthNotification(context, "pt")
         val n = awaitActive(AutoActivityNotifications.NOTIFICATION_ID_REAUTH)
         assertEquals("Checking — Reautenticação necessária", n.title())
+    }
+
+    @Test
+    fun lowAccuracyRetryNotification_usesDedicatedIdAndExactPortugueseText() {
+        AutoActivityNotifications.postLowAccuracyRetryNotification(
+            context,
+            expectedAction = CheckAction.CHECKIN,
+            lang = "pt",
+        )
+
+        val n = awaitActive(AutoActivityNotifications.NOTIFICATION_ID_LOW_ACCURACY)
+        assertEquals("Check-in - Falha!", n.title())
+        assertEquals("Baixa Precisão. Tentará novamente.", n.body())
+    }
+
+    @Test
+    fun lowAccuracyRetryNotification_isRemovedWhenEpisodeFinishes() {
+        AutoActivityNotifications.postLowAccuracyRetryNotification(
+            context,
+            expectedAction = null,
+            lang = "pt",
+        )
+        awaitActive(AutoActivityNotifications.NOTIFICATION_ID_LOW_ACCURACY)
+
+        AutoActivityNotifications.cancelLowAccuracyRetryNotification(context)
+
+        awaitInactive(AutoActivityNotifications.NOTIFICATION_ID_LOW_ACCURACY)
     }
 
     // i18n proof: the same accident push in English must differ from the Portuguese text.

@@ -37,7 +37,15 @@ class GeofenceManager @Inject constructor(
             is AppResult.Success -> r.data
             is AppResult.Failure -> return
         }
-        if (circles.isEmpty()) return
+
+        // addGeofences() replaces equal request IDs, but it does not remove circles that
+        // disappeared after a membership change. Clear the complete previous set first;
+        // an empty response must therefore leave no stale project geofences behind.
+        removeRegisteredGeofences()
+        if (circles.isEmpty()) {
+            activityLogger.logSystem("Geofences cleared (no project locations).")
+            return
+        }
 
         val geofences = circles.map { circle ->
             Geofence.Builder()
@@ -71,6 +79,19 @@ class GeofenceManager @Inject constructor(
             activityLogger.logSystem("Geofences registered (${geofences.size}).") // plan004
         }.onFailure {
             android.util.Log.w(TAG, "Geofence registration failed", it)
+        }
+    }
+
+    private suspend fun removeRegisteredGeofences() {
+        runCatching {
+            suspendCancellableCoroutine<Unit> { cont ->
+                LocationServices.getGeofencingClient(context)
+                    .removeGeofences(geofencePendingIntent(context))
+                    .addOnSuccessListener { cont.resume(Unit) }
+                    .addOnFailureListener { cont.resumeWithException(it) }
+            }
+        }.onFailure {
+            android.util.Log.w(TAG, "Previous geofence removal failed", it)
         }
     }
 

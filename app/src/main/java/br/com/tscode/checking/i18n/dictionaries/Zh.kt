@@ -175,6 +175,7 @@ fun zhDictionary(): Map<String, Any> = d(
         "loadFailed" to "无法加载项目。",
         "userProjectsLoadFailed" to "无法加载用户项目。",
         "updateFailed" to "无法更新项目。",
+        "noProjectMembership" to "该用户未注册到任何项目。",
     ),
     "transport" to d(
         "title" to "交通预约",
@@ -494,6 +495,12 @@ fun zhDictionary(): Map<String, Any> = d(
     "support" to d(
         "phoneNumber" to "5521992174446",
         "messageTemplate" to "我需要有关 Web 应用的帮助。我的钥匙码是 {chave}。",
+    ),
+    "lowAccuracyRetry" to d(
+        "checkinTitle" to "签到 - 失败！",
+        "checkoutTitle" to "签退 - 失败！",
+        "automaticActivityTitle" to "自动活动 - 失败！",
+        "body" to "定位精度低。将再次尝试。",
     ),
     "instructions" to d(
         "heading" to "使用说明",

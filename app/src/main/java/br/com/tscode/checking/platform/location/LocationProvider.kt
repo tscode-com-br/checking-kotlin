@@ -7,6 +7,7 @@ import com.google.android.gms.location.LocationCallback
 import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.Priority
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.callbackFlow
@@ -66,6 +67,10 @@ class LocationProvider @Inject constructor(
             } else {
                 LocationCapture.Timeout
             }
+        } catch (cancellation: CancellationException) {
+            // Cancellation is control flow (for example, when a low-accuracy retry episode is
+            // cancelled). Do not turn it into a misleading permission/unavailable result.
+            throw cancellation
         } catch (_: Exception) {
             LocationCapture.Unavailable
         }

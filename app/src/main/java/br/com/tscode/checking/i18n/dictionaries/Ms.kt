@@ -175,6 +175,7 @@ fun msDictionary(): Map<String, Any> = d(
         "loadFailed" to "Tidak dapat memuatkan projek.",
         "userProjectsLoadFailed" to "Tidak dapat memuatkan projek pengguna.",
         "updateFailed" to "Tidak dapat mengemas kini projek.",
+        "noProjectMembership" to "Pengguna tidak didaftarkan dalam mana-mana projek.",
     ),
     "transport" to d(
         "title" to "Penjadualan Pengangkutan",
@@ -494,6 +495,12 @@ fun msDictionary(): Map<String, Any> = d(
     "support" to d(
         "phoneNumber" to "5521992174446",
         "messageTemplate" to "Saya perlukan bantuan dengan aplikasi Web. Kunci saya ialah {chave}.",
+    ),
+    "lowAccuracyRetry" to d(
+        "checkinTitle" to "Check-in - Gagal!",
+        "checkoutTitle" to "Check-out - Gagal!",
+        "automaticActivityTitle" to "Aktiviti automatik - Gagal!",
+        "body" to "Ketepatan rendah. Akan mencuba lagi.",
     ),
     "instructions" to d(
         "heading" to "Arahan",

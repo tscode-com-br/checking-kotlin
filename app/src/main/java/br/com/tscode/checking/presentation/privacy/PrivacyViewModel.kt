@@ -9,6 +9,7 @@ import br.com.tscode.checking.data.local.activitylog.ActivityLog
 import br.com.tscode.checking.domain.repository.AuthRepository
 import br.com.tscode.checking.i18n.DEFAULT_LANGUAGE
 import br.com.tscode.checking.platform.background.AutoActivityController
+import br.com.tscode.checking.platform.background.BackgroundCheckOrchestrator
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.SharingStarted
@@ -28,6 +29,7 @@ class PrivacyViewModel @Inject constructor(
     private val securePasswordStore: SecurePasswordStore,
     private val activityLog: ActivityLog,
     private val authRepository: AuthRepository,
+    private val orchestrator: BackgroundCheckOrchestrator,
     @ApplicationContext private val appContext: Context,
 ) : ViewModel() {
 
@@ -42,6 +44,10 @@ class PrivacyViewModel @Inject constructor(
      *  store can't leave the wipe half-done silently; onDone runs once the wipe attempt completes. */
     fun deleteLocalData(onDone: () -> Unit) {
         viewModelScope.launch {
+            orchestrator.cancelLowAccuracyRetry()
+            // DataStore.clearAll cannot cancel application-scope Jobs or AlarmManager intents.
+            // Tear them down under the orchestrator mutex before erasing their persisted identity.
+            runCatching { orchestrator.resetScheduledPauseContext() }
             runCatching { AutoActivityController.stop(appContext) } // stop background engine first
             runCatching { authRepository.logout() }                 // clears the encrypted session cookie
             runCatching { activityLog.clear() }                     // local Activities log (Room)

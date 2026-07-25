@@ -8,8 +8,10 @@ sealed interface ApiError {
     // 401/403 — session expired; routes back to the password prompt silently (§8.2).
     data object Unauthorized : ApiError
 
-    // 409 — resource conflict (accident already active; emergency call already placed).
-    data object Conflict : ApiError
+    // 409 — resource conflict. Keep this as a distinct type so existing
+    // `error is ApiError.Conflict` checks continue to work, while retaining the
+    // FastAPI `detail` needed to distinguish membership conflicts from others.
+    data class Conflict(val detail: String? = null) : ApiError
 
     // IOException — no network or timeout.
     data object Network : ApiError

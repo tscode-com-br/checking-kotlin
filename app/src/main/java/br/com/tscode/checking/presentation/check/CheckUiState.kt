@@ -99,6 +99,10 @@ data class CheckUiState(
     // User projects
     val userProjects: UserProjects? = null,
     val isProjectsLoading: Boolean = false,
+    // True while one or more checkbox changes are being serialized to the API.  The
+    // checkboxes remain interactive (new intentions are coalesced), but check-in/out
+    // must wait until the server has confirmed the final membership set.
+    val isProjectMembershipSyncing: Boolean = false,
     // Full catalogue of selectable projects (for the membership checkboxes on the main screen)
     val mainProjectCatalog: List<Project> = emptyList(),
 
@@ -160,11 +164,16 @@ data class CheckUiState(
         get() = !automaticActivitiesEnabled || isAccuracyTooLow
 
     val canSubmit: Boolean
-        get() = isAuthenticated && !isSubmitting && when {
-            !requiresManualLocation -> locationMatch != null
-            // Manual check-out doesn't require a location (sent as "Desconhecido" if none);
-            // manual check-in still requires one.
-            selectedAction == CheckAction.CHECKOUT -> true
-            else -> selectedManualLocation != null
-        }
+        get() = isAuthenticated &&
+            !isSubmitting &&
+            !isProjectsLoading &&
+            !isProjectMembershipSyncing &&
+            userProjects?.let { it.activeProject.isNotEmpty() && it.activeProject in it.projects } == true &&
+            when {
+                !requiresManualLocation -> locationMatch != null
+                // Manual check-out doesn't require a location (sent as "Desconhecido" if none);
+                // manual check-in still requires one.
+                selectedAction == CheckAction.CHECKOUT -> true
+                else -> selectedManualLocation != null
+            }
 }

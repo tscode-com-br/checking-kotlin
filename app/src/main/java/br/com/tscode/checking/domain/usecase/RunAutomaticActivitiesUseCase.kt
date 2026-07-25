@@ -4,12 +4,14 @@ import br.com.tscode.checking.core.error.ApiError
 import br.com.tscode.checking.core.result.AppResult
 import br.com.tscode.checking.core.time.Clock
 import br.com.tscode.checking.domain.checkrules.resolveAutomaticActivityForMatch
+import br.com.tscode.checking.domain.checkrules.resolveLastRecordedAction
 import br.com.tscode.checking.domain.model.ActivityActor
 import br.com.tscode.checking.domain.model.ActivityKind
 import br.com.tscode.checking.domain.model.ActivitySeverity
 import br.com.tscode.checking.domain.model.CheckAction
 import br.com.tscode.checking.domain.model.HistoryState
 import br.com.tscode.checking.domain.model.InformeType
+import br.com.tscode.checking.domain.model.MatchStatus
 import br.com.tscode.checking.domain.model.UserProjects
 import br.com.tscode.checking.domain.offline.PendingCheckEvent
 import br.com.tscode.checking.domain.repository.CheckRepository
@@ -20,6 +22,13 @@ import javax.inject.Inject
 
 sealed class AutoActivitiesResult {
     data class Submitted(val action: CheckAction, val local: String?, val newState: HistoryState) : AutoActivitiesResult()
+    data class AccuracyTooLow(
+        val expectedAction: CheckAction?,
+        val accuracyMeters: Double?,
+        val thresholdMeters: Int,
+    ) : AutoActivitiesResult()
+    object CaptureTimeout : AutoActivitiesResult()
+    object NoPermission : AutoActivitiesResult()
     object NoAction : AutoActivitiesResult()
     object NetworkError : AutoActivitiesResult()
     object NotConfigured : AutoActivitiesResult()
@@ -74,7 +83,25 @@ class RunAutomaticActivitiesUseCase @Inject constructor(
                 }
                 return AutoActivitiesResult.NetworkError
             }
-            else -> return AutoActivitiesResult.NoAction
+            LocationCaptureResult.Timeout -> return AutoActivitiesResult.CaptureTimeout
+            LocationCaptureResult.NoPermission -> return AutoActivitiesResult.NoPermission
+        }
+
+        // Low accuracy is an operational outcome of its own. It must never enter the situation
+        // matrix (and therefore can never submit an activity), because the resolved area is not
+        // trustworthy yet. When the last recorded activity is check-out — or there is no history —
+        // the next possible automatic action is deterministically check-in. After a check-in the
+        // next action depends on the area eventually resolved, so the notification stays generic.
+        if (match.status == MatchStatus.ACCURACY_TOO_LOW) {
+            val expectedAction = when (resolveLastRecordedAction(currentState)) {
+                null, CheckAction.CHECKOUT -> CheckAction.CHECKIN
+                CheckAction.CHECKIN -> null
+            }
+            return AutoActivitiesResult.AccuracyTooLow(
+                expectedAction = expectedAction,
+                accuracyMeters = match.accuracyMeters,
+                thresholdMeters = match.accuracyThresholdMeters,
+            )
         }
 
         val activity = resolveAutomaticActivityForMatch(match, currentState, mixedZoneIntervalMinutes)

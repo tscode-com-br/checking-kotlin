@@ -27,12 +27,14 @@ object AutoActivityNotifications {
     const val NOTIFICATION_ID_REAUTH = 1003
     const val NOTIFICATION_ID_PAUSE = 1004
     const val NOTIFICATION_ID_ACCIDENT = 1005
+    const val NOTIFICATION_ID_LOW_ACCURACY = 1006
 
     private const val REQUEST_CODE_TAP = 2000
     private const val REQUEST_CODE_EVENT = 2001
     private const val REQUEST_CODE_REAUTH = 2002
     private const val REQUEST_CODE_PAUSE = 2003
     private const val REQUEST_CODE_ACCIDENT = 2004
+    private const val REQUEST_CODE_LOW_ACCURACY = 2005
 
     // ─── Service notification ────────────────────────────────────────────────
 
@@ -93,6 +95,34 @@ object AutoActivityNotifications {
     fun postAccidentNotification(context: Context, lang: String) {
         val message = t("autoActivities.notification.accidentMessage", lang = lang)
         postSimpleEvent(context, NOTIFICATION_ID_ACCIDENT, REQUEST_CODE_ACCIDENT, message, lang)
+    }
+
+    // ─── Low-accuracy retry episode notification ────────────────────────────
+
+    // Posted once when an accuracy-retry episode starts. A dedicated, stable notification id
+    // coalesces the message even if Android restores/reposts it around process lifecycle events.
+    fun postLowAccuracyRetryNotification(
+        context: Context,
+        expectedAction: CheckAction?,
+        lang: String,
+    ) {
+        val titleKey = when (expectedAction) {
+            CheckAction.CHECKIN -> "lowAccuracyRetry.checkinTitle"
+            CheckAction.CHECKOUT -> "lowAccuracyRetry.checkoutTitle"
+            null -> "lowAccuracyRetry.automaticActivityTitle"
+        }
+        val notification = NotificationCompat.Builder(context, CheckingApp.CHANNEL_ID_EVENTS)
+            .setContentTitle(t(titleKey, lang = lang))
+            .setContentText(t("lowAccuracyRetry.body", lang = lang))
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentIntent(tapPendingIntent(context, REQUEST_CODE_LOW_ACCURACY))
+            .setAutoCancel(true)
+            .build()
+        notificationManager(context).notify(NOTIFICATION_ID_LOW_ACCURACY, notification)
+    }
+
+    fun cancelLowAccuracyRetryNotification(context: Context) {
+        notificationManager(context).cancel(NOTIFICATION_ID_LOW_ACCURACY)
     }
 
     // Shared builder for the simple "brand title + message" event notifications.

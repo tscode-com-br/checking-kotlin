@@ -9,6 +9,7 @@ import br.com.tscode.checking.domain.model.InformeType
 import br.com.tscode.checking.domain.offline.PendingCheckEvent
 import br.com.tscode.checking.domain.repository.CheckRepository
 import br.com.tscode.checking.platform.activitylog.ActivityLogger
+import br.com.tscode.checking.platform.background.BackgroundCheckOrchestrator
 import java.time.Instant
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -25,43 +26,71 @@ class PendingCheckReplayer @Inject constructor(
     private val queue: OfflineCheckQueue,
     private val checkRepository: CheckRepository,
     private val activityLogger: ActivityLogger,
+    private val orchestrator: BackgroundCheckOrchestrator,
 ) {
     enum class DrainResult { COMPLETED, RETRY }
 
     private enum class Outcome { DONE, DROP, RETRY }
 
+    private data class Confirmation(
+        val chave: String,
+        val project: String,
+        val state: br.com.tscode.checking.domain.model.HistoryState,
+    )
+
+    private data class ReplayResult(
+        val outcome: Outcome,
+        val confirmation: Confirmation? = null,
+    )
+
     suspend fun drain(): DrainResult {
         // Loop so events enqueued DURING a pass are caught in the same run.
         var pass = 0
+        var finalConfirmation: Confirmation? = null
         while (pass < MAX_PASSES) {
             val pending = queue.peekAll()
-            if (pending.isEmpty()) return DrainResult.COMPLETED
+            if (pending.isEmpty()) {
+                finalConfirmation?.let {
+                    orchestrator.onServerConfirmedState(it.chave, it.project, it.state)
+                }
+                return DrainResult.COMPLETED
+            }
             // Newest queued activity — the reference for the 24h FORMS window. Stable across passes
             // (peekAll is capture-ordered and the newest event drains last), so every event is compared
             // against the same anchor. Only the client can compute this: it holds the whole backlog.
             val newestCapturedAtMs = pending.maxOf { it.capturedAtEpochMs }
             activityLogger.logSyncing(pending.size) // plan004 — replay drain started
             for (event in pending) {
-                when (replay(event, newestCapturedAtMs)) {
+                val replay = replay(event, newestCapturedAtMs)
+                if (replay.confirmation != null) finalConfirmation = replay.confirmation
+                when (replay.outcome) {
                     Outcome.DONE, Outcome.DROP -> queue.remove(event.clientEventId)
-                    Outcome.RETRY -> return DrainResult.RETRY // offline / session expired — later
+                    // Never arm grace from an intermediate checkout when a later backlog item may
+                    // restore CHECKIN. Only a fully completed drain publishes finalConfirmation.
+                    Outcome.RETRY -> return DrainResult.RETRY
                 }
             }
             pass++
         }
-        return if (queue.size() == 0) DrainResult.COMPLETED else DrainResult.RETRY
+        return if (queue.size() == 0) {
+            finalConfirmation?.let {
+                orchestrator.onServerConfirmedState(it.chave, it.project, it.state)
+            }
+            DrainResult.COMPLETED
+        } else {
+            DrainResult.RETRY
+        }
     }
 
-    private suspend fun replay(event: PendingCheckEvent, newestCapturedAtMs: Long): Outcome = when (event) {
+    private suspend fun replay(event: PendingCheckEvent, newestCapturedAtMs: Long): ReplayResult = when (event) {
         is PendingCheckEvent.Decided -> replayDecided(event, newestCapturedAtMs)
         is PendingCheckEvent.Raw -> replayRaw(event, newestCapturedAtMs)
     }
 
-    private suspend fun replayDecided(e: PendingCheckEvent.Decided, newestCapturedAtMs: Long): Outcome {
+    private suspend fun replayDecided(e: PendingCheckEvent.Decided, newestCapturedAtMs: Long): ReplayResult {
         val action = if (e.action == "checkout") CheckAction.CHECKOUT else CheckAction.CHECKIN
         val informe = if (e.informe == "retroativo") InformeType.RETROATIVO else InformeType.NORMAL
-        val outcome = outcomeOf(
-            checkRepository.submit(
+        val submit = checkRepository.submit(
                 chave = e.chave,
                 projeto = e.projeto,
                 action = action,
@@ -70,29 +99,33 @@ class PendingCheckReplayer @Inject constructor(
                 eventTime = Instant.ofEpochMilli(e.capturedAtEpochMs),
                 clientEventId = e.clientEventId,
                 fillForms = fillFormsFor(e.capturedAtEpochMs, newestCapturedAtMs),
-            ),
-        )
+            )
+        val outcome = outcomeOf(submit)
         logReplayOutcome(outcome, action, e.local) // plan004
-        return outcome
+        return ReplayResult(
+            outcome = outcome,
+            confirmation = (submit as? AppResult.Success)?.data?.let {
+                Confirmation(e.chave, e.projeto, it)
+            },
+        )
     }
 
-    private suspend fun replayRaw(e: PendingCheckEvent.Raw, newestCapturedAtMs: Long): Outcome {
+    private suspend fun replayRaw(e: PendingCheckEvent.Raw, newestCapturedAtMs: Long): ReplayResult {
         val match = when (val r = checkRepository.matchLocation(e.latitude, e.longitude, e.accuracyMeters)) {
             is AppResult.Success -> r.data
-            is AppResult.Failure -> return failureOutcome(r.error)
+            is AppResult.Failure -> return ReplayResult(failureOutcome(r.error))
         }
         val state = when (val r = checkRepository.getState(e.chave)) {
             is AppResult.Success -> r.data
-            is AppResult.Failure -> return failureOutcome(r.error)
+            is AppResult.Failure -> return ReplayResult(failureOutcome(r.error))
         }
         val options = when (val r = checkRepository.getLocations()) {
             is AppResult.Success -> r.data
-            is AppResult.Failure -> return failureOutcome(r.error)
+            is AppResult.Failure -> return ReplayResult(failureOutcome(r.error))
         }
         val activity = resolveAutomaticActivityForMatch(match, state, options.mixedZoneIntervalMinutes)
-            ?: return Outcome.DONE // no action for this reading — consume it
-        val outcome = outcomeOf(
-            checkRepository.submit(
+            ?: return ReplayResult(Outcome.DONE) // no action for this reading — consume it
+        val submit = checkRepository.submit(
                 chave = e.chave,
                 projeto = e.projeto,
                 action = activity.action,
@@ -101,10 +134,15 @@ class PendingCheckReplayer @Inject constructor(
                 eventTime = Instant.ofEpochMilli(e.capturedAtEpochMs),
                 clientEventId = e.clientEventId,
                 fillForms = fillFormsFor(e.capturedAtEpochMs, newestCapturedAtMs),
-            ),
-        )
+            )
+        val outcome = outcomeOf(submit)
         logReplayOutcome(outcome, activity.action, activity.local) // plan004
-        return outcome
+        return ReplayResult(
+            outcome = outcome,
+            confirmation = (submit as? AppResult.Success)?.data?.let {
+                Confirmation(e.chave, e.projeto, it)
+            },
+        )
     }
 
     // A replayed event fills FORMS only if it is within 24h of the NEWEST queued activity, so a device

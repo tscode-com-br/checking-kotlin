@@ -44,7 +44,7 @@ class OfflineFallbackLocationOptionsTest {
     @Test
     fun `server error bails (null) rather than capturing against a flaky server`() {
         assertNull(offlineFallbackLocationOptions(cached, ApiError.Http(500, "boom")))
-        assertNull(offlineFallbackLocationOptions(cached, ApiError.Conflict))
+        assertNull(offlineFallbackLocationOptions(cached, ApiError.Conflict()))
         assertNull(offlineFallbackLocationOptions(cached, ApiError.Unknown(RuntimeException("x"))))
     }
 }

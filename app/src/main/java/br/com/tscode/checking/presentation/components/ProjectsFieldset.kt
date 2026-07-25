@@ -42,7 +42,8 @@ import br.com.tscode.checking.presentation.theme.Tokens
 /**
  * Project membership — a dropdown box with multi-select checkboxes (web
  * `projectMembershipOptions`). A user may belong to several projects at once, so this is
- * a checkbox list (not radios). At least one project must stay selected (enforced upstream).
+ * a checkbox list (not radios). An empty selection is valid: it represents a user who no
+ * longer belongs to any project.
  */
 @Composable
 fun ProjectsFieldset(
@@ -63,6 +64,7 @@ fun ProjectsFieldset(
     val summary = when {
         memberships.isNotEmpty() -> memberships.joinToString(", ")
         isLoading -> t("projects.loadingProjects", null)
+        options.isNotEmpty() -> t("projects.noProjectMembership", null)
         else -> t("projects.noneAvailableShort", null)
     }
 

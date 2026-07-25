@@ -14,6 +14,9 @@ import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -48,6 +51,7 @@ class OrchestratorSingleFlightTest {
         context, appPrefs, checkRepository, useCase, locationProvider, clock,
         authRepository, securePasswordStore, accidentRepository,
         mockk(relaxed = true),
+        CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
     )
 
     @Test
@@ -73,5 +77,45 @@ class OrchestratorSingleFlightTest {
         assertTrue(run1.isCompleted)
 
         coVerify(exactly = 0) { checkRepository.submit(any(), any(), any(), any(), any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun `accuracy retry waits for single-flight mutex instead of being dropped`() = runTest {
+        val gate = CompletableDeferred<String>()
+        every { appPrefs.chave } returns flow { emit(gate.await()) }
+
+        val run1 = launch { orchestrator.runOnce(OrchestratorTrigger.TIMER) }
+        advanceUntilIdle()
+        assertFalse(run1.isCompleted)
+
+        val retry = launch { orchestrator.runOnce(OrchestratorTrigger.ACCURACY_RETRY) }
+        advanceUntilIdle()
+        assertFalse("accuracy retry must wait while the mutex is held", retry.isCompleted)
+
+        gate.complete("")
+        advanceUntilIdle()
+
+        assertTrue(run1.isCompleted)
+        assertTrue("accuracy retry must run after the mutex becomes available", retry.isCompleted)
+    }
+
+    @Test
+    fun `pause boundary waits for single-flight mutex instead of losing exact alarm`() = runTest {
+        val gate = CompletableDeferred<String>()
+        every { appPrefs.chave } returns flow { emit(gate.await()) }
+
+        val run1 = launch { orchestrator.runOnce(OrchestratorTrigger.TIMER) }
+        advanceUntilIdle()
+        assertFalse(run1.isCompleted)
+
+        val boundary = launch { orchestrator.runOnce(OrchestratorTrigger.PAUSE_START) }
+        advanceUntilIdle()
+        assertFalse("pause boundary must wait while the mutex is held", boundary.isCompleted)
+
+        gate.complete("")
+        advanceUntilIdle()
+
+        assertTrue(run1.isCompleted)
+        assertTrue("pause boundary must run after the in-flight GPS burst", boundary.isCompleted)
     }
 }

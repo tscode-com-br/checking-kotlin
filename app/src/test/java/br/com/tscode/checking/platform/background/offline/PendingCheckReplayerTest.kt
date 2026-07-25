@@ -12,6 +12,7 @@ import br.com.tscode.checking.domain.model.MatchStatus
 import br.com.tscode.checking.domain.offline.PendingCheckEvent
 import br.com.tscode.checking.domain.repository.CheckRepository
 import br.com.tscode.checking.platform.activitylog.ActivityLogger
+import br.com.tscode.checking.platform.background.BackgroundCheckOrchestrator
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
@@ -45,7 +46,8 @@ class PendingCheckReplayerTest {
     }
     private val checkRepository = mockk<CheckRepository>()
     private val activityLogger = mockk<ActivityLogger>(relaxed = true)
-    private val replayer = PendingCheckReplayer(queue, checkRepository, activityLogger)
+    private val orchestrator = mockk<BackgroundCheckOrchestrator>(relaxed = true)
+    private val replayer = PendingCheckReplayer(queue, checkRepository, activityLogger, orchestrator)
 
     private fun raw(id: String, at: Long) = PendingCheckEvent.Raw(chave, projeto, at, id, 1.3, 103.8, 10.0)
     private fun decided(id: String, at: Long, action: String = "checkout", local: String? = "Zona Mista") =
@@ -147,6 +149,48 @@ class PendingCheckReplayerTest {
             AppResult.Failure(ApiError.Network)
         assertEquals(PendingCheckReplayer.DrainResult.RETRY, replayer.drain())
         assertEquals(1, pending.size)
+    }
+
+    @Test
+    fun completed_backlog_publishes_only_final_confirmed_state_to_scheduled_pause() = runTest {
+        pending.add(decided("checkout", at = 1000, action = "checkout"))
+        pending.add(decided("checkin", at = 2000, action = "checkin"))
+        val checkoutState = state(CheckAction.CHECKOUT)
+        val finalCheckinState = state(CheckAction.CHECKIN)
+        coEvery {
+            checkRepository.submit(any(), any(), any(), any(), any(), any(), any(), any())
+        } returnsMany listOf(
+            AppResult.Success(checkoutState),
+            AppResult.Success(finalCheckinState),
+        )
+
+        assertEquals(PendingCheckReplayer.DrainResult.COMPLETED, replayer.drain())
+
+        coVerify(exactly = 1) {
+            orchestrator.onServerConfirmedState(chave, projeto, finalCheckinState)
+        }
+        coVerify(exactly = 0) {
+            orchestrator.onServerConfirmedState(chave, projeto, checkoutState)
+        }
+    }
+
+    @Test
+    fun retrying_backlog_does_not_publish_intermediate_confirmed_checkout() = runTest {
+        pending.add(decided("checkout", at = 1000, action = "checkout"))
+        pending.add(decided("checkin", at = 2000, action = "checkin"))
+        val checkoutState = state(CheckAction.CHECKOUT)
+        coEvery {
+            checkRepository.submit(any(), any(), any(), any(), any(), any(), any(), any())
+        } returnsMany listOf(
+            AppResult.Success(checkoutState),
+            AppResult.Failure(ApiError.Network),
+        )
+
+        assertEquals(PendingCheckReplayer.DrainResult.RETRY, replayer.drain())
+
+        coVerify(exactly = 0) {
+            orchestrator.onServerConfirmedState(any(), any(), any())
+        }
     }
 
     @Test

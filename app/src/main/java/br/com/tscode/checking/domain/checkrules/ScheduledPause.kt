@@ -70,6 +70,65 @@ fun nextResumeInstant(now: ZonedDateTime, settings: ScheduledPauseSettings): Ins
         ?.toInstant()
 }
 
+// Returns the beginning of the concrete active pause occurrence that contains [now]. Candidate
+// boundaries are filtered for a real false→true transition, so overlapping reasons (for example a
+// nightly window extending into a suspended Saturday) remain one occurrence rather than changing
+// identity halfway through.
+fun currentPauseStartInstant(now: ZonedDateTime, settings: ScheduledPauseSettings): Instant? {
+    if (!isScheduledPauseActiveNow(now, settings)) return null
+
+    val candidates = mutableListOf<ZonedDateTime>()
+    if (settings.scheduledPauseEnabled) {
+        val f = parseMinutesOfDay(settings.scheduledPauseFrom)
+        val t = parseMinutesOfDay(settings.scheduledPauseTo)
+        if (f != t) {
+            for (offset in 0L..8L) {
+                candidates.add(
+                    now.toLocalDate().minusDays(offset)
+                        .atTime(f / 60, f % 60)
+                        .atZone(now.zone),
+                )
+            }
+        }
+    }
+    for (offset in 0L..8L) {
+        val day = now.toLocalDate().minusDays(offset)
+        val isSuspendedWeekendDay =
+            (settings.suspendSaturdays && day.dayOfWeek == DayOfWeek.SATURDAY) ||
+                (settings.suspendSundays && day.dayOfWeek == DayOfWeek.SUNDAY)
+        if (isSuspendedWeekendDay) candidates.add(day.atStartOfDay(now.zone))
+    }
+
+    val candidateStart = candidates
+        .asSequence()
+        .filter { !it.isAfter(now) }
+        .filter { candidate ->
+            isScheduledPauseActiveNow(candidate, settings) &&
+                !isScheduledPauseActiveNow(candidate.minusNanos(1), settings)
+        }
+        .filter { candidate ->
+            nextResumeInstant(candidate, settings)?.isAfter(now.toInstant()) == true
+        }
+        .maxByOrNull { it.toInstant() }
+        ?.toInstant()
+    if (candidateStart != null) return candidateStart
+
+    // A configured local start can be nonexistent during a DST spring-forward transition
+    // (02:30 resolves to 03:30, although the boolean window becomes active at the 03:00 jump).
+    // Fall back to an instant-based minute scan only for that exceptional case.
+    var cursor = now.withSecond(0).withNano(0)
+    repeat(8 * 24 * 60 + 1) {
+        val previous = cursor.minusMinutes(1)
+        if (isScheduledPauseActiveNow(cursor, settings) &&
+            !isScheduledPauseActiveNow(previous, settings)
+        ) {
+            return cursor.toInstant()
+        }
+        cursor = previous
+    }
+    return null
+}
+
 // Returns the earliest Instant > now when isScheduledPauseActiveNow becomes TRUE (a transition
 // INTO pause), or null if no pause is configured or we're already paused. Used to schedule the
 // exact alarm that fires the pause-START notification precisely (mirrors nextResumeInstant).

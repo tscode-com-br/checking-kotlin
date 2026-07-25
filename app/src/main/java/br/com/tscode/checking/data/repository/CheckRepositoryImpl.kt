@@ -114,6 +114,12 @@ class CheckRepositoryImpl @Inject constructor(
         }
     }
 
+    override fun invalidateGeofenceCache() {
+        geofenceCache = null
+        geofenceCachedChave = null
+        geofenceCachedAt = Instant.EPOCH
+    }
+
     private fun WebCheckHistoryResponse.toDomain() = HistoryState(
         found = found,
         chave = chave,

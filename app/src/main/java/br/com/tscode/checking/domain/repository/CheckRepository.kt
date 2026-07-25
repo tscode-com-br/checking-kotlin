@@ -37,7 +37,10 @@ interface CheckRepository {
     ): AppResult<HistoryState>
     // Returns bounding circles for the user's project locations (Approach A, §23.2.2).
     // Result is cached for 1 h; callers that need fresh data after login/project change
-    // should call this again — the repository re-fetches when the cache is stale or the
-    // chave changes.
+    // must invalidate the cache before calling this again.
     suspend fun getGeofences(chave: String): AppResult<List<GeofenceCircle>>
+
+    // Membership changes can alter the complete set of circles without changing the chave.
+    // Default no-op keeps lightweight test fakes source-compatible.
+    fun invalidateGeofenceCache() = Unit
 }

@@ -175,6 +175,7 @@ fun idDictionary(): Map<String, Any> = d(
         "loadFailed" to "Tidak dapat memuat proyek.",
         "userProjectsLoadFailed" to "Tidak dapat memuat proyek pengguna.",
         "updateFailed" to "Tidak dapat memperbarui proyek.",
+        "noProjectMembership" to "Pengguna tidak terdaftar di proyek mana pun.",
     ),
     "transport" to d(
         "title" to "Penjadwalan Transportasi",
@@ -494,6 +495,12 @@ fun idDictionary(): Map<String, Any> = d(
     "support" to d(
         "phoneNumber" to "5521992174446",
         "messageTemplate" to "Saya membutuhkan bantuan dengan aplikasi Web. Kunci saya adalah {chave}.",
+    ),
+    "lowAccuracyRetry" to d(
+        "checkinTitle" to "Check-in - Gagal!",
+        "checkoutTitle" to "Check-out - Gagal!",
+        "automaticActivityTitle" to "Aktivitas otomatis - Gagal!",
+        "body" to "Akurasi rendah. Akan mencoba lagi.",
     ),
     "instructions" to d(
         "heading" to "Petunjuk",

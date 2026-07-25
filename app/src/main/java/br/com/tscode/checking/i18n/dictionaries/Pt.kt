@@ -251,6 +251,7 @@ fun ptDictionary(): Map<String, Any> = d(
         "userProjectsLoadFailed" to "Não foi possível carregar os projetos do usuário.",
         "updateFailed" to "Não foi possível atualizar os projetos.",
         "noActiveProject" to "Nenhum projeto ativo selecionado.",
+        "noProjectMembership" to "O usuário não está cadastrado em nenhum projeto.",
     ),
     "transport" to d(
         "title" to "Agendamento de Transporte",
@@ -636,6 +637,12 @@ fun ptDictionary(): Map<String, Any> = d(
     "support" to d(
         "phoneNumber" to "5521992174446",
         "messageTemplate" to "Preciso de ajuda com a aplicação Checking Web. Minha chave é {chave}.",
+    ),
+    "lowAccuracyRetry" to d(
+        "checkinTitle" to "Check-in - Falha!",
+        "checkoutTitle" to "Check-out - Falha!",
+        "automaticActivityTitle" to "Atividade automática - Falha!",
+        "body" to "Baixa Precisão. Tentará novamente.",
     ),
     "autoActivities" to d(
         "title" to "Atividades Automáticas",

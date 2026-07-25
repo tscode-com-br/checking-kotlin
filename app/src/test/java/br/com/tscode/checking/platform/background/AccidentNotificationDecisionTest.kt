@@ -16,6 +16,9 @@ import io.mockk.mockk
 import io.mockk.mockkObject
 import io.mockk.unmockkObject
 import io.mockk.verify
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.encodeToString
@@ -64,6 +67,7 @@ class AccidentNotificationDecisionTest {
         securePasswordStore = mockk(relaxed = true),
         accidentRepository = accidentRepo,
         activityLogger = mockk(relaxed = true),
+        applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
     )
 
     private fun successState(vararg ids: Int) = AppResult.Success(

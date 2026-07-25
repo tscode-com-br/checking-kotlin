@@ -20,6 +20,14 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+internal fun scheduledPauseTriggerForServiceAction(action: String?): OrchestratorTrigger? =
+    when (action) {
+        AutoActivityForegroundService.ACTION_PAUSE_START -> OrchestratorTrigger.PAUSE_START
+        AutoActivityForegroundService.ACTION_PAUSE_END -> OrchestratorTrigger.PAUSE_END
+        AutoActivityForegroundService.ACTION_PAUSE_GRACE -> OrchestratorTrigger.PAUSE_GRACE
+        else -> null
+    }
+
 // Primary background engine for automatic activities (§23.3-1, T3B.2).
 // foregroundServiceType="location" is declared in AndroidManifest.xml.
 // START_STICKY ensures the OS restarts the service after a resource kill.
@@ -58,6 +66,13 @@ class AutoActivityForegroundService : Service() {
             updateNotification(isPaused = false, lang = lang)
             val chave = appPrefs.chave.first().ifEmpty { return@launch }
             geofenceManager.register(chave)
+        }
+        // Exact-alarm boundaries must force their own evaluation even when the normal 15-minute
+        // timer job is already alive. These triggers wait for the orchestrator mutex and therefore
+        // cannot be consumed by an overlapping GPS run.
+        val boundaryTrigger = scheduledPauseTriggerForServiceAction(intent?.action)
+        if (boundaryTrigger != null) {
+            scope.launch { orchestrator.runOnce(boundaryTrigger) }
         }
         // Start the 15-min polling loop only once — guard against multiple onStartCommand calls.
         if (timerJob?.isActive != true) {
@@ -108,6 +123,9 @@ class AutoActivityForegroundService : Service() {
 
     companion object {
         const val ACTION_STOP = "br.com.tscode.checking.AUTO_ACTIVITY_STOP"
+        const val ACTION_PAUSE_START = "br.com.tscode.checking.SCHEDULED_PAUSE_START"
+        const val ACTION_PAUSE_END = "br.com.tscode.checking.SCHEDULED_PAUSE_END"
+        const val ACTION_PAUSE_GRACE = "br.com.tscode.checking.SCHEDULED_PAUSE_GRACE"
         private const val RESTART_DELAY_MS = 1_000L
         private const val TIMER_INTERVAL_MS = 15 * 60 * 1_000L
 

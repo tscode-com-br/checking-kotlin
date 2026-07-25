@@ -149,6 +149,77 @@ class I18nTest {
         }
     }
 
+    @Test
+    fun noProjectMembershipMessage_isDefinedInAllSixLanguages() {
+        val expected =
+            mapOf(
+                "pt" to "O usuário não está cadastrado em nenhum projeto.",
+                "en" to "The user is not registered in any project.",
+                "zh" to "该用户未注册到任何项目。",
+                "ms" to "Pengguna tidak didaftarkan dalam mana-mana projek.",
+                "id" to "Pengguna tidak terdaftar di proyek mana pun.",
+                "tl" to "Hindi nakarehistro ang user sa anumang proyekto.",
+            )
+
+        expected.forEach { (lang, message) ->
+            assertEquals(message, t("projects.noProjectMembership", null, lang))
+        }
+    }
+
+    @Test
+    fun lowAccuracyRetryNotification_isLocalizedInAllSixLanguages() {
+        val expected = mapOf(
+            "pt" to listOf(
+                "Check-in - Falha!",
+                "Check-out - Falha!",
+                "Atividade automática - Falha!",
+                "Baixa Precisão. Tentará novamente.",
+            ),
+            "en" to listOf(
+                "Check-in - Failed!",
+                "Check-out - Failed!",
+                "Automatic activity - Failed!",
+                "Low accuracy. Will try again.",
+            ),
+            "id" to listOf(
+                "Check-in - Gagal!",
+                "Check-out - Gagal!",
+                "Aktivitas otomatis - Gagal!",
+                "Akurasi rendah. Akan mencoba lagi.",
+            ),
+            "ms" to listOf(
+                "Check-in - Gagal!",
+                "Check-out - Gagal!",
+                "Aktiviti automatik - Gagal!",
+                "Ketepatan rendah. Akan mencuba lagi.",
+            ),
+            "tl" to listOf(
+                "Check-in - Nabigo!",
+                "Check-out - Nabigo!",
+                "Awtomatikong aktibidad - Nabigo!",
+                "Mababa ang katumpakan. Susubukan muli.",
+            ),
+            "zh" to listOf(
+                "签到 - 失败！",
+                "签退 - 失败！",
+                "自动活动 - 失败！",
+                "定位精度低。将再次尝试。",
+            ),
+        )
+        val keys = listOf(
+            "lowAccuracyRetry.checkinTitle",
+            "lowAccuracyRetry.checkoutTitle",
+            "lowAccuracyRetry.automaticActivityTitle",
+            "lowAccuracyRetry.body",
+        )
+
+        expected.forEach { (lang, values) ->
+            keys.zip(values).forEach { (key, value) ->
+                assertEquals("$key for $lang", value, t(key, lang = lang))
+            }
+        }
+    }
+
     // ── U2 regression guard: a manual section title must NEVER carry its own number prefix ────────────
     // ManualScreen.ManualSection renders the number once (the bold `index`); if a title also began with
     // "N. " it would reproduce the old "N. N." double-numbering. Guard all 16 sections × 6 languages.

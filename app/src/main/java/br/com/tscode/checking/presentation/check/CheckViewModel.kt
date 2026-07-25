@@ -17,6 +17,7 @@ import br.com.tscode.checking.domain.model.ActivityKind
 import br.com.tscode.checking.domain.model.CheckAction
 import br.com.tscode.checking.domain.model.InformeType
 import br.com.tscode.checking.domain.model.MatchStatus
+import br.com.tscode.checking.domain.model.UserProjects
 import br.com.tscode.checking.domain.repository.AuthRepository
 import br.com.tscode.checking.domain.repository.CheckRepository
 import br.com.tscode.checking.domain.repository.ProjectRepository
@@ -34,6 +35,7 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import br.com.tscode.checking.i18n.DEFAULT_LANGUAGE
 import br.com.tscode.checking.i18n.KnownApiMessages
+import br.com.tscode.checking.i18n.SUPPORTED_LANGUAGES
 import br.com.tscode.checking.i18n.resolveInitialLanguageCode
 import br.com.tscode.checking.i18n.setActiveLanguageCode
 import br.com.tscode.checking.i18n.t
@@ -48,6 +50,8 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import br.com.tscode.checking.core.time.Clock
 import br.com.tscode.checking.domain.offline.PendingCheckEvent
 import br.com.tscode.checking.platform.background.offline.OfflineCheckQueue
@@ -77,14 +81,21 @@ class CheckViewModel @Inject constructor(
     val uiState: StateFlow<CheckUiState> = _uiState.asStateFlow()
 
     private val settingsJson = Json { ignoreUnknownKeys = true; coerceInputValues = true }
+    // Every settings mutation is a read-modify-write of the same JSON document. Serialize
+    // them so a project update cannot overwrite a simultaneous toggle/notification change.
+    private val settingsWriteMutex = Mutex()
 
     private val _languageFlow = MutableStateFlow(DEFAULT_LANGUAGE)
     val languageFlow: StateFlow<String> = _languageFlow.asStateFlow()
 
     private var passwordVerifyJob: Job? = null
     private var checkSseJob: Job? = null
+    private var scheduledPauseSettingsJob: Job? = null
     // plan003 — polls /auth/status while a self-registration is awaiting admin approval.
     private var pendingApprovalPollJob: Job? = null
+    private var projectMembershipLoadGeneration: Long = 0
+    private var projectMembershipCoordinator: UserProjectMembershipCoordinator? = null
+    private var projectMembershipCoordinatorChave: String = ""
 
     init {
         viewModelScope.launch {
@@ -141,6 +152,8 @@ class CheckViewModel @Inject constructor(
         passwordVerifyJob?.cancel()
         stopPendingApprovalPolling()
         stopCheckStream()
+        resetProjectMembershipCoordinator()
+        stopAutomaticActivityEngine(appContext)
 
         _uiState.update {
             it.copy(
@@ -156,6 +169,17 @@ class CheckViewModel @Inject constructor(
                 notificationSecondary = "",
                 notificationTone = NotificationTone.None,
                 historyState = null,
+                transportEnabled = false,
+                userProjects = null,
+                mainProjectCatalog = emptyList(),
+                availableLocations = emptyList(),
+                selectedManualLocation = null,
+                locationMatch = null,
+                isProjectsLoading = false,
+                isProjectMembershipSyncing = false,
+                isLocationLoading = false,
+                automaticActivitiesEnabled = false,
+                autoActivitiesHealth = AutoActivitiesHealth.Off,
             )
         }
 
@@ -166,8 +190,21 @@ class CheckViewModel @Inject constructor(
                 return@launch
             }
             val storedPw = securePasswordStore.getPassword(sanitized)
-            if (storedPw.isNotEmpty()) {
-                _uiState.update { it.copy(password = storedPw) }
+            val settings = loadUserSettings(sanitized)
+            if (_uiState.value.chave != sanitized) return@launch
+            _uiState.update {
+                it.copy(
+                    password = storedPw,
+                    automaticActivitiesEnabled = settings.automaticActivitiesEnabled,
+                    scheduledPauseEnabled = settings.scheduledPauseEnabled,
+                    scheduledPauseFrom = settings.scheduledPauseFrom,
+                    scheduledPauseTo = settings.scheduledPauseTo,
+                    suspendSaturdays = settings.suspendSaturdays,
+                    suspendSundays = settings.suspendSundays,
+                    notifyActivities = settings.notifyActivities,
+                    notifyScheduledPause = settings.notifyScheduledPause,
+                    notifyAccident = settings.notifyAccident,
+                )
             }
             probeStatus(sanitized)
         }
@@ -192,10 +229,12 @@ class CheckViewModel @Inject constructor(
 
     private suspend fun probeStatus(chave: String) {
         authRepository.logout() // clear stale session before re-probing
+        if (_uiState.value.chave != chave) return
         _uiState.update { it.copy(isStatusLoading = true) }
 
         when (val result = authRepository.getStatus(chave)) {
             is AppResult.Success -> {
+                if (_uiState.value.chave != chave) return
                 val status = result.data
                 _uiState.update {
                     it.copy(
@@ -225,6 +264,7 @@ class CheckViewModel @Inject constructor(
                 }
             }
             is AppResult.Failure -> {
+                if (_uiState.value.chave != chave) return
                 _uiState.update {
                     it.copy(isStatusLoading = false, statusErrored = true)
                 }
@@ -293,6 +333,7 @@ class CheckViewModel @Inject constructor(
 
         when (val result = authRepository.login(chave, password)) {
             is AppResult.Success -> {
+                if (_uiState.value.chave != chave) return
                 val status = result.data
                 _uiState.update { it.copy(authStatus = status, prompt = resolvePrompt(status)) }
                 if (status.authenticated) {
@@ -310,6 +351,7 @@ class CheckViewModel @Inject constructor(
                 }
             }
             is AppResult.Failure -> {
+                if (_uiState.value.chave != chave) return
                 when (result.error) {
                     is ApiError.Unauthorized ->
                         _uiState.update {
@@ -336,6 +378,7 @@ class CheckViewModel @Inject constructor(
         chave: String,
         status: br.com.tscode.checking.domain.model.AuthStatus,
     ) {
+        if (_uiState.value.chave != chave) return
         val lang = _languageFlow.value
         _uiState.update {
             it.copy(
@@ -343,16 +386,15 @@ class CheckViewModel @Inject constructor(
                 notificationTone = NotificationTone.Teal,
             )
         }
-        // P4: (re)start the background engine on EVERY successful auth — this covers app launch /
-        // session restore (init → probeStatus → attemptLogin → here) AND live login. Idempotent:
-        // no-op if already running or not eligible (engine off / missing minimum permissions).
-        // Uses the application context so it works outside any Activity/UI flow.
-        ensureEngineRunningIfEligible(appContext)
+        // Do not start the automatic engine from locally persisted membership data here.
+        // loadUserProjects() first replaces it with the API's authoritative state and only
+        // then reconciles the engine/geofences.
         // Load history in background
         viewModelScope.launch {
             _uiState.update { it.copy(isHistoryLoading = true) }
             when (val r = authRepository.getHistory(chave)) {
-                is AppResult.Success ->
+                is AppResult.Success -> {
+                    if (!isCurrentAuthenticatedUser(chave)) return@launch
                     _uiState.update {
                         it.copy(
                             historyState = r.data,
@@ -363,18 +405,28 @@ class CheckViewModel @Inject constructor(
                             selectedManualLocation = it.selectedManualLocation ?: r.data.currentLocal,
                         )
                     }
-                is AppResult.Failure ->
+                    // SSE/foreground GET is authoritative, but the orchestrator reconciles it only
+                    // when a persisted deferral for this exact occurrence already exists.
+                    _uiState.value.userProjects?.activeProject
+                        ?.takeIf { it.isNotEmpty() }
+                        ?.let { project ->
+                            orchestrator.onServerConfirmedState(chave, project, r.data)
+                        }
+                }
+                is AppResult.Failure -> {
+                    if (_uiState.value.chave != chave) return@launch
                     _uiState.update { it.copy(isHistoryLoading = false) }
+                }
             }
         }
         // Load user projects, the full project catalogue, and available locations
-        viewModelScope.launch { loadUserProjects() }
-        viewModelScope.launch { loadMainProjectCatalog() }
-        viewModelScope.launch { loadAvailableLocations() }
+        viewModelScope.launch { loadUserProjects(chave) }
+        viewModelScope.launch { loadMainProjectCatalog(chave) }
         // P5: compute the one-time first-login nudge (per-chave). Read the persisted dismissal flag,
         // then apply the pure predicate: show only if authenticated + auto OFF + not yet dismissed.
         viewModelScope.launch {
             val dismissed = appPreferences.getFlag(nudgeFlag(chave)).first()
+            if (!isCurrentAuthenticatedUser(chave)) return@launch
             _uiState.update {
                 it.copy(
                     showAutoActivitiesNudge = shouldShowAutoActivitiesNudge(
@@ -415,7 +467,8 @@ class CheckViewModel @Inject constructor(
         if (chave.length != 4 || !_uiState.value.isAuthenticated) return
         viewModelScope.launch {
             when (val r = checkRepository.getState(chave)) {
-                is AppResult.Success ->
+                is AppResult.Success -> {
+                    if (!isCurrentAuthenticatedUser(chave)) return@launch
                     _uiState.update {
                         it.copy(
                             historyState = r.data,
@@ -423,8 +476,17 @@ class CheckViewModel @Inject constructor(
                             selectedManualLocation = it.selectedManualLocation ?: r.data.currentLocal,
                         )
                     }
-                is AppResult.Failure ->
-                    if (r.error is ApiError.Unauthorized) handleAuthExpiry()
+                    _uiState.value.userProjects?.activeProject
+                        ?.takeIf { it.isNotEmpty() }
+                        ?.let { project ->
+                            orchestrator.onServerConfirmedState(chave, project, r.data)
+                        }
+                }
+                is AppResult.Failure -> {
+                    if (_uiState.value.chave == chave && r.error is ApiError.Unauthorized) {
+                        handleAuthExpiry()
+                    }
+                }
             }
         }
     }
@@ -441,13 +503,10 @@ class CheckViewModel @Inject constructor(
         }
         if (_uiState.value.isAuthenticated) {
             refreshCheckState()
-            // Change C (P3.1): with auto-activities ON, foregrounding runs the engine, which decides
-            // check-in OR check-out. FOREGROUND bypasses skip-if-unchanged by design; single-flight
-            // (runOnce mutex) prevents overlap with TIMER/GEOFENCE; change A (P6.1 — check-in only on
-            // location change) prevents redundant same-location check-ins. No-op when auto is OFF.
-            if (_uiState.value.automaticActivitiesEnabled) {
-                viewModelScope.launch { orchestrator.runOnce(OrchestratorTrigger.FOREGROUND) }
-            }
+            val chave = _uiState.value.chave
+            // Membership may have changed in the web/iOS app while Android was in the
+            // background. Refresh it before any automatic evaluation.
+            viewModelScope.launch { loadUserProjects(chave) }
         }
     }
 
@@ -456,17 +515,23 @@ class CheckViewModel @Inject constructor(
     // 401/403 on any protected call → silently reset to auth prompt (§8.2).
     private fun handleAuthExpiry() {
         stopCheckStream()
+        resetProjectMembershipCoordinator()
+        stopAutomaticActivityEngine(appContext)
+        checkRepository.invalidateGeofenceCache()
         _uiState.update {
             it.copy(
                 authStatus = it.authStatus?.copy(authenticated = false),
                 isSubmitting = false,
                 isProjectsLoading = false,
+                isProjectMembershipSyncing = false,
                 isHistoryLoading = false,
                 isLocationLoading = false,
                 notificationPrimary = "",
                 notificationSecondary = "",
                 notificationTone = NotificationTone.None,
                 userProjects = null,
+                mainProjectCatalog = emptyList(),
+                availableLocations = emptyList(),
                 historyState = null,
                 locationMatch = null,
                 selectedManualLocation = null,
@@ -575,40 +640,87 @@ class CheckViewModel @Inject constructor(
         _uiState.update { it.copy(selectedManualLocation = location) }
     }
 
-    private suspend fun loadAvailableLocations() {
+    private fun isCurrentAuthenticatedUser(chave: String): Boolean =
+        _uiState.value.chave == chave && _uiState.value.isAuthenticated
+
+    private fun isProjectMembershipStateCurrent(chave: String, expected: UserProjects): Boolean {
+        if (!isCurrentAuthenticatedUser(chave) || projectMembershipCoordinatorChave != chave) return false
+        return projectMembershipCoordinator?.state?.displayed == expected
+    }
+
+    private suspend fun loadAvailableLocations(
+        chave: String,
+        expectedMembership: UserProjects? = null,
+    ) {
         when (val r = checkRepository.getLocations()) {
-            is AppResult.Success -> _uiState.update { it.copy(availableLocations = r.data.items) }
+            is AppResult.Success -> {
+                if (!isCurrentAuthenticatedUser(chave)) return
+                if (expectedMembership != null &&
+                    !isProjectMembershipStateCurrent(chave, expectedMembership)
+                ) {
+                    return
+                }
+                _uiState.update { it.copy(availableLocations = r.data.items) }
+            }
             is AppResult.Failure ->
-                if (r.error is ApiError.Unauthorized) handleAuthExpiry()
+                if (_uiState.value.chave == chave && r.error is ApiError.Unauthorized) handleAuthExpiry()
         }
     }
 
     // ─── User projects ────────────────────────────────────────────────────────
 
-    private suspend fun loadUserProjects() {
+    private suspend fun loadUserProjects(chave: String) {
+        // The PUT worker owns the optimistic state until it reaches a stable server
+        // response. A parallel GET could briefly revert freshly tapped checkboxes.
+        if (_uiState.value.isProjectMembershipSyncing) return
+        val generation = ++projectMembershipLoadGeneration
+        if (!isCurrentAuthenticatedUser(chave)) return
         _uiState.update { it.copy(isProjectsLoading = true) }
         when (val r = projectRepository.getUserProjects()) {
             is AppResult.Success -> {
-                // Persist the server's projects/activeProject into userSettingsJson so the BACKGROUND
-                // engine (BackgroundCheckOrchestrator reads the PERSISTED settings, not uiState) has a
-                // project to act on. Without this the orchestrator sees activeProject="" →
-                // NotConfigured → no automatic activity ever fires (even with the FGS running).
-                persistUserProjects(_uiState.value.chave, r.data.projects, r.data.activeProject)
-                _uiState.update { it.copy(userProjects = r.data, isProjectsLoading = false) }
-                viewModelScope.launch { orchestrator.runOnce(OrchestratorTrigger.FOREGROUND) }
+                if (!isCurrentAuthenticatedUser(chave) || generation != projectMembershipLoadGeneration) return
+                replaceProjectMembershipCoordinator(chave, r.data)
+                updateNoProjectNotification(r.data)
+                reconcileProjectMembership(
+                    chave = chave,
+                    projects = r.data,
+                    clearManualSelection = false,
+                )
+                if (!isCurrentAuthenticatedUser(chave) || generation != projectMembershipLoadGeneration) return
+                _uiState.update { it.copy(isProjectsLoading = false) }
             }
-            is AppResult.Failure ->
-                if (r.error is ApiError.Unauthorized) handleAuthExpiry()
-                else _uiState.update { it.copy(isProjectsLoading = false) }
+            is AppResult.Failure -> {
+                if (_uiState.value.chave != chave || generation != projectMembershipLoadGeneration) return
+                if (r.error is ApiError.Unauthorized) {
+                    handleAuthExpiry()
+                } else {
+                    val lang = _languageFlow.value
+                    _uiState.update {
+                        it.copy(
+                            isProjectsLoading = false,
+                            notificationPrimary = t("projects.userProjectsLoadFailed", lang = lang),
+                            notificationSecondary = "",
+                            notificationTone = NotificationTone.Error,
+                        )
+                    }
+                }
+            }
         }
     }
 
     fun onActiveProjectSelected(projectName: String) {
+        val chave = _uiState.value.chave
         viewModelScope.launch {
             when (val r = projectRepository.updateActiveProject(projectName)) {
                 is AppResult.Success -> {
-                    persistUserProjects(_uiState.value.chave, r.data.projects, r.data.activeProject)
+                    if (!isCurrentAuthenticatedUser(chave)) return@launch
+                    replaceProjectMembershipCoordinator(chave, r.data)
                     _uiState.update { it.copy(userProjects = r.data) }
+                    reconcileProjectMembership(
+                        chave = chave,
+                        projects = r.data,
+                        clearManualSelection = true,
+                    )
                 }
                 is AppResult.Failure ->
                     if (r.error is ApiError.Unauthorized) handleAuthExpiry()
@@ -621,66 +733,222 @@ class CheckViewModel @Inject constructor(
     // this, automatic activities are NotConfigured and never fire. Overrides projects/activeProject
     // directly (preserving the other persisted flags) to avoid any normalization wiping them.
     private suspend fun persistUserProjects(chave: String, projects: List<String>, activeProject: String) {
-        if (chave.length != 4) return
-        val rawJson = appPreferences.userSettingsJson.first()
-        val map = runCatching {
-            settingsJson.decodeFromString<Map<String, UserSettings?>>(rawJson)
-        }.getOrElse { emptyMap() }.toMutableMap()
-        val current = resolvePersistedUserSettings(map, chave)
-        map[chave] = current.copy(projects = projects, activeProject = activeProject)
-        appPreferences.setUserSettingsJson(settingsJson.encodeToString(map.toMap()))
+        updatePersistedUserSettings(chave) {
+            it.copy(projects = projects, activeProject = activeProject)
+        }
     }
 
-    private suspend fun loadMainProjectCatalog() {
-        when (val r = projectRepository.listProjects()) {
-            is AppResult.Success -> _uiState.update { it.copy(mainProjectCatalog = r.data) }
-            is AppResult.Failure ->
-                if (r.error is ApiError.Unauthorized) handleAuthExpiry()
+    private suspend fun updatePersistedUserSettings(
+        chave: String,
+        transform: (UserSettings) -> UserSettings,
+    ) {
+        if (chave.length != 4) return
+        settingsWriteMutex.withLock {
+            val rawJson = appPreferences.userSettingsJson.first()
+            val currentMap: Map<String, UserSettings?> = runCatching {
+                settingsJson.decodeFromString<Map<String, UserSettings?>>(rawJson)
+            }.getOrElse { emptyMap() }
+            val current = resolvePersistedUserSettings(currentMap, chave)
+            val nextMap = withPersistedUserSettings(currentMap, chave, transform(current))
+            appPreferences.setUserSettingsJson(settingsJson.encodeToString(nextMap))
         }
+    }
+
+    private suspend fun loadMainProjectCatalog(chave: String) {
+        when (val r = projectRepository.listProjects()) {
+            is AppResult.Success -> {
+                if (!isCurrentAuthenticatedUser(chave)) return
+                _uiState.update { it.copy(mainProjectCatalog = r.data) }
+            }
+            is AppResult.Failure ->
+                if (_uiState.value.chave == chave && r.error is ApiError.Unauthorized) handleAuthExpiry()
+        }
+    }
+
+    private suspend fun reconcileProjectMembership(
+        chave: String,
+        projects: UserProjects,
+        clearManualSelection: Boolean,
+    ): Boolean {
+        val previousActiveProject = loadUserSettings(chave).activeProject
+        persistUserProjects(chave, projects.projects, projects.activeProject)
+        if (!isCurrentAuthenticatedUser(chave)) return false
+        if (!isProjectMembershipStateCurrent(chave, projects)) return false
+
+        if (previousActiveProject != projects.activeProject) {
+            // Invalidate an in-flight result only for a real active-project transition.
+            // Idempotent foreground GET reconciliation must preserve the episode deadline.
+            orchestrator.cancelLowAccuracyRetry()
+            orchestrator.resetScheduledPauseContext()
+        }
+        checkRepository.invalidateGeofenceCache()
+        if (projects.projects.isEmpty() || projects.activeProject.isEmpty()) {
+            _uiState.update {
+                it.copy(
+                    availableLocations = emptyList(),
+                    selectedManualLocation = null,
+                    locationMatch = null,
+                    isLocationLoading = false,
+                )
+            }
+            stopAutomaticActivityEngine(appContext)
+            return isProjectMembershipStateCurrent(chave, projects)
+        }
+
+        if (clearManualSelection) {
+            _uiState.update { it.copy(selectedManualLocation = null) }
+        }
+        loadAvailableLocations(chave, expectedMembership = projects)
+        if (!isProjectMembershipStateCurrent(chave, projects)) return false
+
+        if (_uiState.value.automaticActivitiesEnabled) {
+            ensureEngineRunningIfEligible(appContext, refreshGeofences = true)
+            orchestrator.runOnce(OrchestratorTrigger.FOREGROUND)
+        }
+        return isProjectMembershipStateCurrent(chave, projects)
+    }
+
+    private fun showNoProjectNotification() {
+        val lang = _languageFlow.value
+        _uiState.update {
+            it.copy(
+                notificationPrimary = t("projects.noProjectMembership", lang = lang),
+                notificationSecondary = "",
+                notificationTone = NotificationTone.Error,
+            )
+        }
+    }
+
+    private fun updateNoProjectNotification(
+        projects: UserProjects,
+    ) {
+        if (projects.projects.isEmpty() || projects.activeProject.isEmpty()) {
+            showNoProjectNotification()
+            return
+        }
+        val noProjectMessages = SUPPORTED_LANGUAGES
+            .map { t("projects.noProjectMembership", lang = it.code) }
+            .toSet()
+        _uiState.update {
+            if (it.notificationPrimary in noProjectMessages) {
+                it.copy(
+                    notificationPrimary = "",
+                    notificationSecondary = "",
+                    notificationTone = NotificationTone.None,
+                )
+            } else {
+                it
+            }
+        }
+    }
+
+    private fun replaceProjectMembershipCoordinator(chave: String, confirmed: UserProjects) {
+        val current = projectMembershipCoordinator
+        if (current != null && projectMembershipCoordinatorChave == chave) {
+            current.reset(confirmed)
+            return
+        }
+
+        resetProjectMembershipCoordinator(invalidateLoads = false)
+        projectMembershipCoordinatorChave = chave
+        lateinit var coordinator: UserProjectMembershipCoordinator
+        coordinator = UserProjectMembershipCoordinator(
+            scope = viewModelScope,
+            initialConfirmed = confirmed,
+            update = { projectNames ->
+                projectRepository.updateUserProjects(projectNames)
+            },
+            onStateChanged = { syncState ->
+                if (isCurrentAuthenticatedUser(chave) && projectMembershipCoordinatorChave == chave) {
+                    _uiState.update {
+                        it.copy(
+                            userProjects = syncState.displayed,
+                            isProjectMembershipSyncing = syncState.syncing,
+                        )
+                    }
+                }
+            },
+            onCommitted = commit@{ authoritative ->
+                if (!isCurrentAuthenticatedUser(chave) ||
+                    projectMembershipCoordinatorChave != chave ||
+                    projectMembershipCoordinator !== coordinator
+                ) {
+                    return@commit
+                }
+                val committed = reconcileProjectMembership(
+                    chave = chave,
+                    projects = authoritative,
+                    clearManualSelection = true,
+                )
+                if (!committed) return@commit
+                if (authoritative.projects.isEmpty() || authoritative.activeProject.isEmpty()) {
+                    showNoProjectNotification()
+                } else {
+                    val lang = _languageFlow.value
+                    _uiState.update {
+                        it.copy(
+                            notificationPrimary = t("projects.updatedSuccess", lang = lang),
+                            notificationSecondary = "",
+                            notificationTone = NotificationTone.Success,
+                        )
+                    }
+                }
+            },
+            onError = failure@{ error ->
+                if (!isCurrentAuthenticatedUser(chave) ||
+                    projectMembershipCoordinatorChave != chave ||
+                    projectMembershipCoordinator !== coordinator
+                ) {
+                    return@failure
+                }
+                if (error is ApiError.Unauthorized) {
+                    handleAuthExpiry()
+                } else {
+                    val lang = _languageFlow.value
+                    if (coordinator.state.displayed.projects.isEmpty()) {
+                        _uiState.update {
+                            it.copy(
+                                notificationPrimary = t("projects.noProjectMembership", lang = lang),
+                                notificationSecondary = t("projects.updateFailed", lang = lang),
+                                notificationTone = NotificationTone.Error,
+                            )
+                        }
+                    } else {
+                        _uiState.update {
+                            it.copy(
+                                notificationPrimary = t("projects.updateFailed", lang = lang),
+                                notificationSecondary = "",
+                                notificationTone = NotificationTone.Error,
+                            )
+                        }
+                    }
+                }
+            },
+        )
+        projectMembershipCoordinator = coordinator
+    }
+
+    private fun resetProjectMembershipCoordinator(invalidateLoads: Boolean = true) {
+        if (invalidateLoads) projectMembershipLoadGeneration += 1
+        projectMembershipCoordinator?.reset(UserProjects(emptyList(), ""))
+        projectMembershipCoordinator = null
+        projectMembershipCoordinatorChave = ""
     }
 
     // Multi-select project membership (web: projectMembershipOptions checkboxes).
-    // Toggles a project in/out of the user's membership; at least one must remain selected.
+    // Toggles are optimistic and serialized; removing the final item is valid.
     fun onProjectMembershipToggled(projectName: String) {
-        val current = _uiState.value.userProjects?.projects ?: emptyList()
-        val next = if (current.contains(projectName)) {
-            current.filter { it != projectName }
-        } else {
-            current + projectName
+        val state = _uiState.value
+        if (!state.isAuthenticated) return
+        val currentProjects = state.userProjects ?: return
+        val chave = state.chave
+
+        if (projectMembershipCoordinator == null || projectMembershipCoordinatorChave != chave) {
+            replaceProjectMembershipCoordinator(chave, currentProjects)
         }
-        // Enforce ≥1 membership (projects.selectAtLeastOne)
-        if (next.isEmpty()) {
-            val lang = _languageFlow.value
-            _uiState.update {
-                it.copy(
-                    notificationPrimary = t("projects.selectAtLeastOne", lang = lang),
-                    notificationTone = NotificationTone.Error,
-                )
-            }
-            return
-        }
-        _uiState.update { it.copy(isProjectsLoading = true) }
-        viewModelScope.launch {
-            when (val r = projectRepository.updateUserProjects(next)) {
-                is AppResult.Success -> {
-                    persistUserProjects(_uiState.value.chave, r.data.projects, r.data.activeProject)
-                    _uiState.update {
-                        it.copy(
-                            userProjects = r.data,
-                            isProjectsLoading = false,
-                            // Membership change can change which locations are available.
-                            selectedManualLocation = null,
-                        )
-                    }
-                    // Reload the available locations for the new project set.
-                    loadAvailableLocations()
-                }
-                is AppResult.Failure -> {
-                    if (r.error is ApiError.Unauthorized) handleAuthExpiry()
-                    else _uiState.update { it.copy(isProjectsLoading = false) }
-                }
-            }
-        }
+        projectMembershipLoadGeneration += 1
+        _uiState.update { it.copy(isProjectsLoading = false) }
+        projectMembershipCoordinator?.toggle(projectName)
     }
 
     // ─── Dialogs ──────────────────────────────────────────────────────────────
@@ -1023,6 +1291,23 @@ class CheckViewModel @Inject constructor(
     fun onSubmit() {
         val state = _uiState.value
         val lang = _languageFlow.value
+        val userProjects = state.userProjects
+        val projeto = userProjects?.activeProject
+            ?.takeIf { it.isNotEmpty() && it in userProjects.projects }
+        if (projeto == null) {
+            showNoProjectNotification()
+            return
+        }
+        if (state.isProjectsLoading || state.isProjectMembershipSyncing) {
+            _uiState.update {
+                it.copy(
+                    notificationPrimary = t("projects.updatingProjects", lang = lang),
+                    notificationSecondary = "",
+                    notificationTone = NotificationTone.Info,
+                )
+            }
+            return
+        }
         if (!state.canSubmit) return
 
         // §13.6 step 2 — manual submission is only allowed when automatic activities are
@@ -1031,16 +1316,6 @@ class CheckViewModel @Inject constructor(
             _uiState.update {
                 it.copy(
                     notificationPrimary = t("registration.disableAutomaticActivitiesForManualSubmit", lang = lang),
-                    notificationTone = NotificationTone.Error,
-                )
-            }
-            return
-        }
-
-        val projeto = state.userProjects?.activeProject?.takeIf { it.isNotEmpty() } ?: run {
-            _uiState.update {
-                it.copy(
-                    notificationPrimary = t("projects.noActiveProject", lang = lang),
                     notificationTone = NotificationTone.Error,
                 )
             }
@@ -1080,6 +1355,8 @@ class CheckViewModel @Inject constructor(
         // (exactly-once: the replay dedups by client_event_id even if the submit reached the server).
         val clientEventId = UUID.randomUUID().toString()
         val eventTime = clock.now()
+        val wasLowAccuracyFallback =
+            state.automaticActivitiesEnabled && state.isAccuracyTooLow
         viewModelScope.launch {
             when (val r = checkRepository.submit(
                 chave = state.chave,
@@ -1091,7 +1368,18 @@ class CheckViewModel @Inject constructor(
                 clientEventId = clientEventId,
             )) {
                 is AppResult.Success -> {
+                    if (!isCurrentAuthenticatedUser(state.chave)) return@launch
+                    if (wasLowAccuracyFallback) {
+                        orchestrator.cancelLowAccuracyRetry()
+                    }
                     val newState = r.data
+                    // Server-confirmed state (not the submitted payload) reconciles a deferred
+                    // scheduled pause. Offline enqueue deliberately has no equivalent callback.
+                    orchestrator.onServerConfirmedState(
+                        chave = state.chave,
+                        project = projeto,
+                        newState = newState,
+                    )
                     val actionKey = when (state.selectedAction) {
                         br.com.tscode.checking.domain.model.CheckAction.CHECKIN -> "status.checkinCompleted"
                         br.com.tscode.checking.domain.model.CheckAction.CHECKOUT -> "status.checkoutCompleted"
@@ -1116,12 +1404,15 @@ class CheckViewModel @Inject constructor(
                     // for the transport-enabled flag, which the submit response omits).
                     viewModelScope.launch {
                         when (val refreshed = checkRepository.getState(state.chave)) {
-                            is AppResult.Success -> _uiState.update {
-                                it.copy(
-                                    historyState = refreshed.data,
-                                    transportEnabled = refreshed.data.transportEnabled,
-                                    selectedManualLocation = it.selectedManualLocation ?: refreshed.data.currentLocal,
-                                )
+                            is AppResult.Success -> {
+                                if (!isCurrentAuthenticatedUser(state.chave)) return@launch
+                                _uiState.update {
+                                    it.copy(
+                                        historyState = refreshed.data,
+                                        transportEnabled = refreshed.data.transportEnabled,
+                                        selectedManualLocation = it.selectedManualLocation ?: refreshed.data.currentLocal,
+                                    )
+                                }
                             }
                             is AppResult.Failure -> Unit
                         }
@@ -1130,7 +1421,7 @@ class CheckViewModel @Inject constructor(
                 is AppResult.Failure -> {
                     val err = r.error
                     if (err is ApiError.Unauthorized) {
-                        handleAuthExpiry()
+                        if (_uiState.value.chave == state.chave) handleAuthExpiry()
                         activityLogger.logError("Session expired — sign in again.")
                     } else if (err is ApiError.Network) {
                         // Offline / server unreachable → queue for sync on reconnect (P8) with the
@@ -1152,6 +1443,13 @@ class CheckViewModel @Inject constructor(
                                 informe = if (informe == InformeType.RETROATIVO) "retroativo" else "normal",
                             ),
                         )
+                        if (_uiState.value.chave != state.chave) return@launch
+                        if (wasLowAccuracyFallback) {
+                            // Once queued, replay owns this exact manual event. Stop the automatic
+                            // retry episode only after enqueue succeeds to avoid a distinct event
+                            // being generated when connectivity returns.
+                            orchestrator.cancelLowAccuracyRetry()
+                        }
                         _uiState.update {
                             it.copy(
                                 isSubmitting = false,
@@ -1165,7 +1463,28 @@ class CheckViewModel @Inject constructor(
                             if (state.selectedAction == CheckAction.CHECKIN) ActivityKind.CHECK_IN else ActivityKind.CHECK_OUT,
                             local,
                         )
+                    } else if (err is ApiError.Conflict) {
+                        loadUserProjects(state.chave)
+                        if (!isCurrentAuthenticatedUser(state.chave)) return@launch
+                        _uiState.update { it.copy(isSubmitting = false) }
+                        if (_uiState.value.userProjects?.projects.isNullOrEmpty()) {
+                            showNoProjectNotification()
+                        } else {
+                            _uiState.update {
+                                it.copy(
+                                    notificationPrimary = t("status.submitFailed", lang = lang),
+                                    notificationSecondary = "",
+                                    notificationTone = NotificationTone.Error,
+                                )
+                            }
+                        }
+                        if (state.selectedAction == CheckAction.CHECKIN) {
+                            activityLogger.logCheckIn(ActivityActor.USER, local, success = false)
+                        } else {
+                            activityLogger.logCheckOut(ActivityActor.USER, local, success = false)
+                        }
                     } else {
+                        if (_uiState.value.chave != state.chave) return@launch
                         val msg = (err as? ApiError.Http)?.detail
                             ?.let { KnownApiMessages.localizeApiMessage(it, lang) }
                             ?: t("status.submitFailed", lang = lang)
@@ -1213,6 +1532,10 @@ class CheckViewModel @Inject constructor(
             val lang = _languageFlow.value
             when (val result = authRepository.deleteAccount()) {
                 is AppResult.Success -> {
+                    orchestrator.cancelLowAccuracyRetry()
+                    // clearAll removes DataStore state but cannot cancel in-process delay Jobs or
+                    // AlarmManager PendingIntents. Tear those down first, under the orchestrator lock.
+                    orchestrator.resetScheduledPauseContext()
                     runCatching { AutoActivityController.stop(appContext) }
                     runCatching { activityLog.clear() }
                     runCatching { securePasswordStore.clearAll() }
@@ -1284,18 +1607,13 @@ class CheckViewModel @Inject constructor(
         notifyScheduledPause: Boolean,
         notifyAccident: Boolean,
     ) {
-        val rawJson = appPreferences.userSettingsJson.first()
-        val currentMap: Map<String, UserSettings?> = runCatching {
-            settingsJson.decodeFromString<Map<String, UserSettings?>>(rawJson)
-        }.getOrElse { emptyMap() }
-        val current = resolvePersistedUserSettings(currentMap, chave)
-        val updated = current.copy(
-            notifyActivities = notifyActivities,
-            notifyScheduledPause = notifyScheduledPause,
-            notifyAccident = notifyAccident,
-        )
-        val newMap = withPersistedUserSettings(currentMap, chave, updated)
-        appPreferences.setUserSettingsJson(settingsJson.encodeToString(newMap))
+        updatePersistedUserSettings(chave) {
+            it.copy(
+                notifyActivities = notifyActivities,
+                notifyScheduledPause = notifyScheduledPause,
+                notifyAccident = notifyAccident,
+            )
+        }
     }
 
     fun openEvaluationLogDialog() {
@@ -1377,15 +1695,30 @@ class CheckViewModel @Inject constructor(
                 suspendSundays = suspendSun,
             )
         }
-        viewModelScope.launch {
+        val chave = _uiState.value.chave
+        // Date/time pickers can emit several values quickly. The latest job always persists last
+        // and is the only one allowed to reconcile the runtime pause occurrence.
+        scheduledPauseSettingsJob?.cancel()
+        scheduledPauseSettingsJob = viewModelScope.launch {
             persistScheduledPauseSettings(
-                chave = _uiState.value.chave,
+                chave = chave,
                 enabled = enabled,
                 from = from,
                 to = to,
                 suspendSat = suspendSat,
                 suspendSun = suspendSun,
             )
+            val latest = _uiState.value
+            if (latest.chave != chave ||
+                latest.scheduledPauseEnabled != enabled ||
+                latest.scheduledPauseFrom != from ||
+                latest.scheduledPauseTo != to ||
+                latest.suspendSaturdays != suspendSat ||
+                latest.suspendSundays != suspendSun
+            ) {
+                return@launch
+            }
+            orchestrator.onScheduledPauseConfigurationChanged(chave)
         }
     }
 
@@ -1397,18 +1730,35 @@ class CheckViewModel @Inject constructor(
     // callback, and (P4) the launch/auth and ON_RESUME paths.
     // NOTE (P2): "sufficient" here still means fine + background; P2 relaxes the start threshold to the
     // minimum (fine only) and makes background/battery advisory.
-    private fun ensureEngineRunningIfEligible(context: Context) {
-        if (_uiState.value.chave.length != 4) return
-        if (!_uiState.value.automaticActivitiesEnabled) return
+    private fun ensureEngineRunningIfEligible(
+        context: Context,
+        refreshGeofences: Boolean = false,
+    ) {
+        val state = _uiState.value
+        if (state.chave.length != 4) return
+        if (!state.automaticActivitiesEnabled) return
+        if (state.isProjectMembershipSyncing && !refreshGeofences) return
+        if (state.userProjects?.activeProject?.isNotEmpty() != true) return
         val status = PermissionLadder.checkStatus(context)
         // P2: the MINIMUM to start is notifications (API 33+) + precise location. Background ("Allow
         // all the time") and battery exemption are RECOMMENDED, not required to start.
         val minimumOk = status.minimumToStartGranted
         _uiState.update { it.copy(locationPermissionSufficient = minimumOk) }
         if (!minimumOk) return
-        if (!AutoActivityController.isRunning()) {
+        if (!AutoActivityController.isRunning() || refreshGeofences) {
             AutoActivityController.start(context)
         }
+    }
+
+    private fun stopAutomaticActivityEngine(context: Context) {
+        // Also retire any in-process low-accuracy retry immediately. Stopping the Android service
+        // alone does not cancel an application-scope coroutine.
+        orchestrator.cancelLowAccuracyRetry()
+        orchestrator.invalidateScheduledPauseContext()
+        // WorkManager is not available in local JVM tests and Android may reject a
+        // background service command during lifecycle transitions. Stopping is best effort;
+        // the persisted membership/boot gates still prevent automatic submissions.
+        runCatching { AutoActivityController.stop(context) }
     }
 
     // Runs ONE normal (situation-engine) evaluation the instant automatic activities are enabled, so the
@@ -1424,17 +1774,22 @@ class CheckViewModel @Inject constructor(
     // records an activity only when one is actually warranted (no forced/spurious event, no duplicate —
     // a same-location re-check-in is suppressed). Single-flight with the FGS via the orchestrator mutex.
     private fun runImmediateAutoEvaluation() {
-        val chave = _uiState.value.chave
+        val state = _uiState.value
+        val chave = state.chave
         if (chave.length != 4) return
+        if (state.isProjectMembershipSyncing || state.userProjects?.activeProject?.isEmpty() != false) return
         viewModelScope.launch {
             orchestrator.runOnce(OrchestratorTrigger.FOREGROUND)
             when (val refreshed = checkRepository.getState(chave)) {
-                is AppResult.Success -> _uiState.update {
-                    it.copy(
-                        historyState = refreshed.data,
-                        transportEnabled = refreshed.data.transportEnabled,
-                        selectedManualLocation = it.selectedManualLocation ?: refreshed.data.currentLocal,
-                    )
+                is AppResult.Success -> {
+                    if (!isCurrentAuthenticatedUser(chave)) return@launch
+                    _uiState.update {
+                        it.copy(
+                            historyState = refreshed.data,
+                            transportEnabled = refreshed.data.transportEnabled,
+                            selectedManualLocation = it.selectedManualLocation ?: refreshed.data.currentLocal,
+                        )
+                    }
                 }
                 is AppResult.Failure -> Unit
             }
@@ -1448,7 +1803,37 @@ class CheckViewModel @Inject constructor(
     // left the engine off in the field.)
     fun onAutomaticActivitiesToggled(enabled: Boolean, context: Context) {
         viewModelScope.launch {
-            val chave = _uiState.value.chave
+            val currentState = _uiState.value
+            val chave = currentState.chave
+            if (enabled && (currentState.isProjectsLoading || currentState.isProjectMembershipSyncing)) {
+                val lang = _languageFlow.value
+                _uiState.update {
+                    it.copy(
+                        automaticActivitiesEnabled = false,
+                        autoActivitiesHealth = AutoActivitiesHealth.Off,
+                        notificationPrimary = t("projects.updatingProjects", lang = lang),
+                        notificationSecondary = "",
+                        notificationTone = NotificationTone.Info,
+                    )
+                }
+                persistAutoActivitiesEnabled(chave, false)
+                return@launch
+            }
+            if (enabled &&
+                (currentState.userProjects?.projects.isNullOrEmpty() ||
+                    currentState.userProjects?.activeProject.isNullOrEmpty())
+            ) {
+                persistAutoActivitiesEnabled(chave, false)
+                _uiState.update {
+                    it.copy(
+                        automaticActivitiesEnabled = false,
+                        autoActivitiesHealth = AutoActivitiesHealth.Off,
+                    )
+                }
+                stopAutomaticActivityEngine(context)
+                showNoProjectNotification()
+                return@launch
+            }
             persistAutoActivitiesEnabled(chave, enabled)
             // P5: enabling auto-activities resolves the nudge (recompute → false).
             _uiState.update { it.copy(automaticActivitiesEnabled = enabled, autoActivitiesHealth = computeHealth(enabled, context), showAutoActivitiesNudge = if (enabled) false else it.showAutoActivitiesNudge) }
@@ -1459,7 +1844,7 @@ class CheckViewModel @Inject constructor(
                 if (_uiState.value.locationPermissionSufficient) runImmediateAutoEvaluation()
                 activityLogger.logSystem("Automatic activities enabled by user.") // plan004
             } else {
-                AutoActivityController.stop(context)
+                stopAutomaticActivityEngine(context)
                 activityLogger.logSystem("Automatic activities disabled by user.") // plan004
             }
         }
@@ -1472,7 +1857,36 @@ class CheckViewModel @Inject constructor(
     // on a fresh install).
     fun onAutoActivitiesPermissionsGranted(context: Context) {
         viewModelScope.launch {
-            val chave = _uiState.value.chave
+            val currentState = _uiState.value
+            val chave = currentState.chave
+            if (currentState.isProjectsLoading || currentState.isProjectMembershipSyncing) {
+                val lang = _languageFlow.value
+                persistAutoActivitiesEnabled(chave, false)
+                _uiState.update {
+                    it.copy(
+                        automaticActivitiesEnabled = false,
+                        autoActivitiesHealth = AutoActivitiesHealth.Off,
+                        notificationPrimary = t("projects.updatingProjects", lang = lang),
+                        notificationSecondary = "",
+                        notificationTone = NotificationTone.Info,
+                    )
+                }
+                return@launch
+            }
+            if (currentState.userProjects?.projects.isNullOrEmpty() ||
+                currentState.userProjects?.activeProject.isNullOrEmpty()
+            ) {
+                persistAutoActivitiesEnabled(chave, false)
+                _uiState.update {
+                    it.copy(
+                        automaticActivitiesEnabled = false,
+                        autoActivitiesHealth = AutoActivitiesHealth.Off,
+                    )
+                }
+                stopAutomaticActivityEngine(context)
+                showNoProjectNotification()
+                return@launch
+            }
             persistAutoActivitiesEnabled(chave, true)
             // P5: auto-activities now on → the nudge is resolved.
             _uiState.update { it.copy(automaticActivitiesEnabled = true, autoActivitiesHealth = computeHealth(true, context), showAutoActivitiesNudge = false) }
@@ -1508,14 +1922,9 @@ class CheckViewModel @Inject constructor(
     }
 
     private suspend fun persistAutoActivitiesEnabled(chave: String, enabled: Boolean) {
-        val rawJson = appPreferences.userSettingsJson.first()
-        val currentMap: Map<String, UserSettings?> = runCatching {
-            settingsJson.decodeFromString<Map<String, UserSettings?>>(rawJson)
-        }.getOrElse { emptyMap() }
-        val current = resolvePersistedUserSettings(currentMap, chave)
-        val updated = current.copy(automaticActivitiesEnabled = enabled)
-        val newMap = withPersistedUserSettings(currentMap, chave, updated)
-        appPreferences.setUserSettingsJson(settingsJson.encodeToString(newMap))
+        updatePersistedUserSettings(chave) {
+            it.copy(automaticActivitiesEnabled = enabled)
+        }
     }
 
     private suspend fun persistScheduledPauseSettings(
@@ -1526,19 +1935,14 @@ class CheckViewModel @Inject constructor(
         suspendSat: Boolean,
         suspendSun: Boolean,
     ) {
-        val rawJson = appPreferences.userSettingsJson.first()
-        val currentMap: Map<String, UserSettings?> = runCatching {
-            settingsJson.decodeFromString<Map<String, UserSettings?>>(rawJson)
-        }.getOrElse { emptyMap() }
-        val current = resolvePersistedUserSettings(currentMap, chave)
-        val updated = current.copy(
-            scheduledPauseEnabled = enabled,
-            scheduledPauseFrom = from,
-            scheduledPauseTo = to,
-            suspendSaturdays = suspendSat,
-            suspendSundays = suspendSun,
-        )
-        val newMap = withPersistedUserSettings(currentMap, chave, updated)
-        appPreferences.setUserSettingsJson(settingsJson.encodeToString(newMap))
+        updatePersistedUserSettings(chave) {
+            it.copy(
+                scheduledPauseEnabled = enabled,
+                scheduledPauseFrom = from,
+                scheduledPauseTo = to,
+                suspendSaturdays = suspendSat,
+                suspendSundays = suspendSun,
+            )
+        }
     }
 }

@@ -245,6 +245,7 @@ fun enDictionary(): Map<String, Any> = d(
         "loadFailed" to "Could not load the projects.",
         "userProjectsLoadFailed" to "Could not load the user projects.",
         "updateFailed" to "Could not update the projects.",
+        "noProjectMembership" to "The user is not registered in any project.",
     ),
     "transport" to d(
         "title" to "Transport Scheduling",
@@ -565,6 +566,12 @@ fun enDictionary(): Map<String, Any> = d(
     "support" to d(
         "phoneNumber" to "5521992174446",
         "messageTemplate" to "I need help with the Web application. My key is {chave}.",
+    ),
+    "lowAccuracyRetry" to d(
+        "checkinTitle" to "Check-in - Failed!",
+        "checkoutTitle" to "Check-out - Failed!",
+        "automaticActivityTitle" to "Automatic activity - Failed!",
+        "body" to "Low accuracy. Will try again.",
     ),
     "autoActivities" to d(
         "title" to "Automatic Activities",

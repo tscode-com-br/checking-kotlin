@@ -175,6 +175,7 @@ fun tlDictionary(): Map<String, Any> = d(
         "loadFailed" to "Hindi ma-load ang mga proyekto.",
         "userProjectsLoadFailed" to "Hindi ma-load ang mga proyekto ng user.",
         "updateFailed" to "Hindi ma-update ang mga proyekto.",
+        "noProjectMembership" to "Hindi nakarehistro ang user sa anumang proyekto.",
     ),
     "transport" to d(
         "title" to "Pag-iskedyul ng Transport",
@@ -494,6 +495,12 @@ fun tlDictionary(): Map<String, Any> = d(
     "support" to d(
         "phoneNumber" to "5521992174446",
         "messageTemplate" to "Kailangan ko ng tulong sa Web application. Ang susi ko ay {chave}.",
+    ),
+    "lowAccuracyRetry" to d(
+        "checkinTitle" to "Check-in - Nabigo!",
+        "checkoutTitle" to "Check-out - Nabigo!",
+        "automaticActivityTitle" to "Awtomatikong aktibidad - Nabigo!",
+        "body" to "Mababa ang katumpakan. Susubukan muli.",
     ),
     "instructions" to d(
         "heading" to "Mga Tagubilin",

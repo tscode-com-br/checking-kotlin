@@ -47,8 +47,10 @@ object AutoActivityController {
         val intent = Intent(context, AutoActivityForegroundService::class.java).apply {
             action = AutoActivityForegroundService.ACTION_STOP
         }
-        context.startService(intent)
-        AutoActivityWatchdogWorker.cancel(context)
+        // Each cleanup is independent. A service-start restriction must not prevent the
+        // watchdog from being cancelled or stale project geofences from being removed.
+        runCatching { context.startService(intent) }
+        runCatching { AutoActivityWatchdogWorker.cancel(context) }
         GeofenceManager.unregisterAll(context)
     }
 
