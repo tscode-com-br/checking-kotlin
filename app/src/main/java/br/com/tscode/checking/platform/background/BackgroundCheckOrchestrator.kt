@@ -115,6 +115,21 @@ internal fun offlineFallbackLocationOptions(
         null
     }
 
+/**
+ * Only failures with a reasonable chance of succeeding without user intervention own a scheduled
+ * retry. Authentication keeps using the orchestrator's single silent re-login pass; permanent
+ * client/conflict errors and unknown programming/decoding failures wait for an external trigger.
+ */
+internal fun shouldRetryScheduledPauseConfirmation(error: ApiError): Boolean = when (error) {
+    ApiError.Network -> true
+    is ApiError.Http ->
+        error.status == 408 || error.status == 429 || error.status in 500..599
+    ApiError.Unauthorized,
+    is ApiError.Conflict,
+    is ApiError.Unknown,
+    -> false
+}
+
 // The 7-step background check engine (§23.4, T3B.3).
 // Single-flight via a Mutex.  Acquires a wake lock for the duration of each burst.
 // Called by the FGS 15-min timer, GeofenceBroadcastReceiver, and CheckViewModel foreground path.
@@ -735,25 +750,26 @@ class BackgroundCheckOrchestrator @Inject constructor(
             return ScheduledPauseGateDecision.Continue(confirmedState = null)
         }
 
-        val confirmedState = (freshStateResult as? AppResult.Success)?.data
-        if (confirmedState == null) {
+        if (freshStateResult is AppResult.Failure) {
+            val error = freshStateResult.error
             if (runtime?.phase == ScheduledPauseRuntimePhase.GRACE) {
                 // Grace is due, but the final state cannot be revalidated. Keep the original
-                // deadline and retry soon; do not start a pause on an uncertain server state.
-                schedulePauseConfirmationRetry(occurrence)
+                // deadline; do not start a pause on an uncertain server state.
+                handlePauseConfirmationFailure(runtime, error)
                 scheduleResumeAlarm(Instant.ofEpochMilli(occurrence.resumeAtEpochMs))
                 return ScheduledPauseGateDecision.Grace
             }
-            persistScheduledPauseRuntime(
-                ScheduledPauseRuntimeState(
-                    occurrence = occurrence,
-                    phase = ScheduledPauseRuntimePhase.AWAITING_CHECKOUT,
-                ),
+            val awaitingRuntime = ScheduledPauseRuntimeState(
+                occurrence = occurrence,
+                phase = ScheduledPauseRuntimePhase.AWAITING_CHECKOUT,
+                confirmationRetryAtEpochMs = runtime?.confirmationRetryAtEpochMs,
             )
-            schedulePauseConfirmationRetry(occurrence)
+            persistScheduledPauseRuntime(awaitingRuntime)
+            handlePauseConfirmationFailure(awaitingRuntime, error)
             scheduleResumeAlarm(Instant.ofEpochMilli(occurrence.resumeAtEpochMs))
             return ScheduledPauseGateDecision.AwaitingVerification
         }
+        val confirmedState = (freshStateResult as AppResult.Success).data
 
         return if (resolveLastRecordedAction(confirmedState) == CheckAction.CHECKIN) {
             // The pause remains pending, including across process death. Automatic checkout and a
@@ -1084,16 +1100,54 @@ class BackgroundCheckOrchestrator @Inject constructor(
         }
     }
 
-    private fun schedulePauseConfirmationRetry(occurrence: ScheduledPauseOccurrence) {
-        val retryAt = clock.now().plusSeconds(SCHEDULED_PAUSE_CONFIRM_RETRY_SECONDS)
+    private suspend fun handlePauseConfirmationFailure(
+        runtime: ScheduledPauseRuntimeState,
+        error: ApiError,
+    ) {
+        if (shouldRetryScheduledPauseConfirmation(error)) {
+            schedulePauseConfirmationRetry(runtime)
+        } else {
+            // The alarm may be firing concurrently with an external trigger. Explicitly retire both
+            // backstops and the persisted deadline so a permanent failure cannot form a retry loop.
+            cancelScheduledPauseGraceWake()
+            if (runtime.confirmationRetryAtEpochMs != null) {
+                persistScheduledPauseRuntime(runtime.copy(confirmationRetryAtEpochMs = null))
+            }
+        }
+    }
+
+    private suspend fun schedulePauseConfirmationRetry(runtime: ScheduledPauseRuntimeState) {
+        val now = clock.now()
+        val previousRetryAt = runtime.confirmationRetryAtEpochMs?.let(Instant::ofEpochMilli)
+        val retryAt = if (previousRetryAt != null && previousRetryAt.isAfter(now)) {
+            // A foreground/geofence trigger must not postpone an already armed retry.
+            previousRetryAt
+        } else {
+            now.plusSeconds(
+                if (previousRetryAt == null) {
+                    SCHEDULED_PAUSE_CONFIRM_FIRST_RETRY_SECONDS
+                } else {
+                    SCHEDULED_PAUSE_CONFIRM_BACKOFF_SECONDS
+                },
+            )
+        }
+        val occurrence = runtime.occurrence
         if (retryAt.toEpochMilli() >= occurrence.resumeAtEpochMs) {
             cancelScheduledPauseGraceWake()
+            if (runtime.confirmationRetryAtEpochMs != null) {
+                persistScheduledPauseRuntime(runtime.copy(confirmationRetryAtEpochMs = null))
+            }
             return
+        }
+        val scheduledRuntime = runtime.copy(confirmationRetryAtEpochMs = retryAt.toEpochMilli())
+        if (scheduledRuntime != runtime) {
+            persistScheduledPauseRuntime(scheduledRuntime)
         }
         scheduledPauseGraceJob?.cancel()
         scheduleExactWake(REQUEST_CODE_PAUSE_GRACE, retryAt.toEpochMilli())
+        val waitMillis = (retryAt.toEpochMilli() - now.toEpochMilli()).coerceAtLeast(0L)
         scheduledPauseGraceJob = applicationScope.launch {
-            delay(SCHEDULED_PAUSE_CONFIRM_RETRY_SECONDS * 1_000L)
+            delay(waitMillis)
             scheduledPauseGraceJob = null
             runOnce(OrchestratorTrigger.PAUSE_GRACE)
         }
@@ -1318,7 +1372,8 @@ class BackgroundCheckOrchestrator @Inject constructor(
         private const val REQUEST_CODE_PAUSE_START = 1002
         private const val REQUEST_CODE_PAUSE_GRACE = 1003
         private const val SCHEDULED_PAUSE_GRACE_SECONDS = 10L
-        private const val SCHEDULED_PAUSE_CONFIRM_RETRY_SECONDS = 10L
+        private const val SCHEDULED_PAUSE_CONFIRM_FIRST_RETRY_SECONDS = 10L
+        private const val SCHEDULED_PAUSE_CONFIRM_BACKOFF_SECONDS = 180L
         // Persisted "currently paused" flag (survives process death) — AppPreferences.getFlag.
         private const val FLAG_PAUSE_ACTIVE = "scheduled_pause_active"
         private val STATE_CACHE_TTL: Duration = Duration.ofSeconds(45)

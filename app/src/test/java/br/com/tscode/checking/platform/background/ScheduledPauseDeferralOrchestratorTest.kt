@@ -41,7 +41,9 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import org.junit.After
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -98,6 +100,9 @@ class ScheduledPauseDeferralOrchestratorTest {
         } just Runs
         every {
             AutoActivityNotifications.postLowAccuracyRetryNotification(any(), any(), any())
+        } just Runs
+        every {
+            AutoActivityNotifications.postReauthNotification(any(), any())
         } just Runs
 
         mockkStatic(PendingIntent::class)
@@ -250,6 +255,7 @@ class ScheduledPauseDeferralOrchestratorTest {
         orchestrator.runOnce(OrchestratorTrigger.PAUSE_START)
 
         assertEquals(ScheduledPauseRuntimePhase.AWAITING_CHECKOUT, runtime().phase)
+        assertEquals(clock.now().plusSeconds(10).toEpochMilli(), runtime().confirmationRetryAtEpochMs)
         coVerify(exactly = 0) { useCase(any(), any(), any(), any(), any()) }
         verify(exactly = 0) {
             AutoActivityNotifications.postScheduledPauseTransition(any(), any(), any())
@@ -270,6 +276,188 @@ class ScheduledPauseDeferralOrchestratorTest {
         assertEquals(ScheduledPauseRuntimePhase.ACTIVE, runtime().phase)
         coVerify(exactly = 0) { useCase(any(), any(), any(), any(), any()) }
         cleanup(orchestrator)
+    }
+
+    @Test
+    fun `transient verification failures retry after ten seconds then back off three minutes`() =
+        runTest {
+            remoteResult = AppResult.Failure(ApiError.Network)
+            val initialTime = clock.now()
+            val orchestrator = orchestrator(this)
+
+            orchestrator.runOnce(OrchestratorTrigger.PAUSE_START)
+            assertEquals(
+                initialTime.plusSeconds(10).toEpochMilli(),
+                runtime().confirmationRetryAtEpochMs,
+            )
+            coVerify(exactly = 1) { checkRepository.getState("HR70") }
+
+            clock.instant = initialTime.plusSeconds(10)
+            advanceTimeBy(10_000)
+            runCurrent()
+
+            assertEquals(
+                initialTime.plusSeconds(190).toEpochMilli(),
+                runtime().confirmationRetryAtEpochMs,
+            )
+            coVerify(exactly = 2) { checkRepository.getState("HR70") }
+
+            clock.instant = initialTime.plusSeconds(190)
+            advanceTimeBy(180_000)
+            runCurrent()
+
+            coVerify(exactly = 3) { checkRepository.getState("HR70") }
+            assertEquals(
+                initialTime.plusSeconds(370).toEpochMilli(),
+                runtime().confirmationRetryAtEpochMs,
+            )
+            cleanup(orchestrator)
+        }
+
+    @Test
+    fun `external transient trigger preserves an already armed fast retry`() = runTest {
+        remoteResult = AppResult.Failure(ApiError.Network)
+        val initialTime = clock.now()
+        val orchestrator = orchestrator(this)
+        orchestrator.runOnce(OrchestratorTrigger.PAUSE_START)
+
+        clock.instant = initialTime.plusSeconds(5)
+        orchestrator.runOnce(OrchestratorTrigger.PAUSE_START)
+
+        assertEquals(
+            initialTime.plusSeconds(10).toEpochMilli(),
+            runtime().confirmationRetryAtEpochMs,
+        )
+        coVerify(exactly = 2) { checkRepository.getState("HR70") }
+
+        clock.instant = initialTime.plusSeconds(10)
+        advanceTimeBy(5_000)
+        runCurrent()
+
+        coVerify(exactly = 3) { checkRepository.getState("HR70") }
+        assertEquals(
+            initialTime.plusSeconds(190).toEpochMilli(),
+            runtime().confirmationRetryAtEpochMs,
+        )
+        cleanup(orchestrator)
+    }
+
+    @Test
+    fun `permanent failure cancels a previously armed confirmation retry`() = runTest {
+        remoteResult = AppResult.Failure(ApiError.Network)
+        val initialTime = clock.now()
+        val orchestrator = orchestrator(this)
+        orchestrator.runOnce(OrchestratorTrigger.PAUSE_START)
+        assertEquals(
+            initialTime.plusSeconds(10).toEpochMilli(),
+            runtime().confirmationRetryAtEpochMs,
+        )
+
+        clock.instant = initialTime.plusSeconds(5)
+        remoteResult = AppResult.Failure(ApiError.Http(400, "permanent"))
+        orchestrator.runOnce(OrchestratorTrigger.PAUSE_START)
+
+        assertNull(runtime().confirmationRetryAtEpochMs)
+        coVerify(exactly = 2) { checkRepository.getState("HR70") }
+
+        clock.instant = initialTime.plusSeconds(605)
+        advanceTimeBy(600_000)
+        runCurrent()
+
+        coVerify(exactly = 2) { checkRepository.getState("HR70") }
+        cleanup(orchestrator)
+    }
+
+    @Test
+    fun `grace verification failures use fast retry then three minute backoff`() = runTest {
+        val initialTime = clock.now()
+        remoteResult = AppResult.Success(history(CheckAction.CHECKOUT, initialTime))
+        val orchestrator = orchestrator(this)
+        orchestrator.runOnce(OrchestratorTrigger.PAUSE_START)
+        assertEquals(ScheduledPauseRuntimePhase.GRACE, runtime().phase)
+        assertEquals(initialTime.plusSeconds(10).toEpochMilli(), runtime().activateAtEpochMs)
+
+        remoteResult = AppResult.Failure(ApiError.Network)
+        clock.instant = initialTime.plusSeconds(10)
+        advanceTimeBy(10_000)
+        runCurrent()
+
+        assertEquals(ScheduledPauseRuntimePhase.GRACE, runtime().phase)
+        assertEquals(
+            initialTime.plusSeconds(20).toEpochMilli(),
+            runtime().confirmationRetryAtEpochMs,
+        )
+
+        clock.instant = initialTime.plusSeconds(20)
+        advanceTimeBy(10_000)
+        runCurrent()
+
+        assertEquals(
+            initialTime.plusSeconds(200).toEpochMilli(),
+            runtime().confirmationRetryAtEpochMs,
+        )
+        verify(exactly = 0) {
+            AutoActivityNotifications.postScheduledPauseTransition(any(), true, any())
+        }
+        cleanup(orchestrator)
+    }
+
+    @Test
+    fun `successful fast retry activates pause and retires confirmation deadline`() = runTest {
+        remoteResult = AppResult.Failure(ApiError.Network)
+        val initialTime = clock.now()
+        val orchestrator = orchestrator(this)
+        orchestrator.runOnce(OrchestratorTrigger.PAUSE_START)
+
+        remoteResult = AppResult.Success(history(null, null))
+        clock.instant = initialTime.plusSeconds(10)
+        advanceTimeBy(10_000)
+        runCurrent()
+
+        assertEquals(ScheduledPauseRuntimePhase.ACTIVE, runtime().phase)
+        assertNull(runtime().confirmationRetryAtEpochMs)
+        coVerify(exactly = 2) { checkRepository.getState("HR70") }
+        cleanup(orchestrator)
+    }
+
+    @Test
+    fun `unauthorized verification failure uses reauthentication flow without own retry loop`() =
+        runTest {
+            remoteResult = AppResult.Failure(ApiError.Unauthorized)
+            val orchestrator = orchestrator(this)
+
+            orchestrator.runOnce(OrchestratorTrigger.PAUSE_START)
+
+            assertEquals(ScheduledPauseRuntimePhase.AWAITING_CHECKOUT, runtime().phase)
+            assertNull(runtime().confirmationRetryAtEpochMs)
+            coVerify(exactly = 1) { checkRepository.getState("HR70") }
+            verify(exactly = 1) {
+                AutoActivityNotifications.postReauthNotification(any(), "pt")
+            }
+
+            clock.instant = clock.instant.plusSeconds(600)
+            advanceTimeBy(600_000)
+            runCurrent()
+
+            coVerify(exactly = 1) { checkRepository.getState("HR70") }
+            cleanup(orchestrator)
+        }
+
+    @Test
+    fun `confirmation retry policy accepts only transient failures`() {
+        assertTrue(shouldRetryScheduledPauseConfirmation(ApiError.Network))
+        assertTrue(shouldRetryScheduledPauseConfirmation(ApiError.Http(408, null)))
+        assertTrue(shouldRetryScheduledPauseConfirmation(ApiError.Http(429, null)))
+        assertTrue(shouldRetryScheduledPauseConfirmation(ApiError.Http(500, null)))
+        assertTrue(shouldRetryScheduledPauseConfirmation(ApiError.Http(599, null)))
+
+        assertFalse(shouldRetryScheduledPauseConfirmation(ApiError.Unauthorized))
+        assertFalse(shouldRetryScheduledPauseConfirmation(ApiError.Conflict()))
+        assertFalse(shouldRetryScheduledPauseConfirmation(ApiError.Http(400, null)))
+        assertFalse(shouldRetryScheduledPauseConfirmation(ApiError.Http(422, null)))
+        assertFalse(
+            shouldRetryScheduledPauseConfirmation(ApiError.Unknown(IllegalStateException("boom"))),
+        )
     }
 
     @Test

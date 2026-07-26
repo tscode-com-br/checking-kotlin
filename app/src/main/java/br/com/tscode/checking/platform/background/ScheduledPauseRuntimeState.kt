@@ -41,6 +41,9 @@ internal data class ScheduledPauseRuntimeState(
     val phase: ScheduledPauseRuntimePhase,
     // Meaningful only for GRACE. The original deadline is never extended by duplicate callbacks.
     val activateAtEpochMs: Long? = null,
+    // Present only while a transient remote-state failure is awaiting confirmation. Persisting the
+    // deadline preserves the fast-first / backed-off-next retry policy across process restarts.
+    val confirmationRetryAtEpochMs: Long? = null,
 )
 
 internal fun scheduledPauseOccurrence(
